@@ -4,7 +4,7 @@
   "description": "Headless Gantt chart engine for Vue 3, with copy-in shadcn-vue components",
   "keywords": ["vue", "vue3", "gantt", "gantt-chart", "timeline", "headless", "shadcn-vue", "tailwind"],
   "license": "MIT",
-  "author": "Timur Kutumbaev",
+  "author": "Timur Kutumbayev",
   "repository": { "type": "git", "url": "git+https://github.com/ktimur91/ganttkit.git", "directory": "packages/core" },
   "funding": { "type": "ko-fi", "url": "https://ko-fi.com/ktimur91" },
   "type": "module",
