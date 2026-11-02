@@ -101,7 +101,7 @@ const number = new Intl.NumberFormat('en')
     <header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2.5">
       <div class="flex items-baseline gap-2">
         <span class="font-semibold tracking-tight">ganttkit</span>
-        <span class="text-xs text-muted-foreground">playground</span>
+        <span class="hidden text-xs text-muted-foreground sm:inline">playground</span>
       </div>
 
       <div class="flex rounded-md border p-0.5 text-xs" role="group" aria-label="Rows">
@@ -113,7 +113,7 @@ const number = new Intl.NumberFormat('en')
           :class="size === count ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="load(count)"
         >
-          {{ number.format(count) }} rows
+          {{ narrow ? `${count / 1000}k` : `${number.format(count)} rows` }}
         </button>
       </div>
 
