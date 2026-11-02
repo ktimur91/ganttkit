@@ -9,7 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # write: to create the GitHub release for the tag.
+  contents: write
   id-token: write
 
 jobs:
@@ -33,3 +34,8 @@ jobs:
       # Verbose: trusted publishing failures are only explained at this level.
       - run: npm publish --provenance --access public --loglevel verbose
         working-directory: packages/core
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
