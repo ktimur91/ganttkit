@@ -55,6 +55,13 @@ function rowMeta(id: string) {
 
 const chart = useTemplateRef<{ gantt: GanttInstance<DemoRow, DemoItem> }>('chart')
 
+// On phones the date columns go away, so the timeline keeps most of the width.
+const narrowQuery = matchMedia('(max-width: 640px)')
+const narrow = ref(narrowQuery.matches)
+const onNarrowChange = (event: MediaQueryListEvent) => (narrow.value = event.matches)
+narrowQuery.addEventListener('change', onNarrowChange)
+onBeforeUnmount(() => narrowQuery.removeEventListener('change', onNarrowChange))
+
 // Theme
 const dark = ref(document.documentElement.classList.contains('dark'))
 function toggleTheme() {
@@ -166,22 +173,30 @@ const number = new Intl.NumberFormat('en')
       locale="en"
       :rows="rows"
       :items="items"
-      :sidebar-width="340"
+      :sidebar-width="narrow ? 160 : 340"
       :is-item-editable="(item: DemoItem) => item.type !== 'summary'"
       @item-change="onItemChange"
     >
       <template #sidebar-header>
-        <div class="grid w-full grid-cols-[1fr_64px_40px] gap-2 px-3 pb-2 text-xs font-medium text-muted-foreground">
+        <div
+          class="grid w-full gap-2 px-3 pb-2 text-xs font-medium text-muted-foreground"
+          :class="narrow ? 'grid-cols-1' : 'grid-cols-[1fr_64px_40px]'"
+        >
           <span>Task</span>
-          <span>Start</span>
-          <span class="text-right">Days</span>
+          <template v-if="!narrow">
+            <span>Start</span>
+            <span class="text-right">Days</span>
+          </template>
         </div>
       </template>
 
       <template #row="row">
-        <div class="grid h-full grid-cols-[1fr_64px_40px] items-center gap-2 pr-3">
+        <div
+          class="grid h-full items-center gap-2 pr-3"
+          :class="narrow ? 'grid-cols-1' : 'grid-cols-[1fr_64px_40px]'"
+        >
           <GanttRowLabel :row="row" class="min-w-0 pr-0" />
-          <template v-if="rowMeta(row.id)">
+          <template v-if="!narrow && rowMeta(row.id)">
             <span class="text-xs text-muted-foreground tabular-nums">{{ rowMeta(row.id)!.start }}</span>
             <span class="text-right text-xs text-muted-foreground tabular-nums">{{ rowMeta(row.id)!.days || '-' }}</span>
           </template>

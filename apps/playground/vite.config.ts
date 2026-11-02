@@ -6,6 +6,8 @@ import { defineConfig } from 'vite'
 const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
 
 export default defineConfig({
+  // GitHub Pages serves the demo from /ganttkit/, see .github/workflows/pages.yml.
+  base: process.env.BASE_PATH ?? '/',
   plugins: [vue(), tailwindcss()],
   resolve: {
     // Registry files live outside this app, make them use the app's Vue.
