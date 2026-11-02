@@ -57,8 +57,9 @@ export function generate(rowCount: number, seed = 7) {
   for (let p = 0; rows.length < rowCount; p++) {
     const project = `p${p}`
     rows.push({ id: project, name: `${PROJECTS[p % PROJECTS.length]} ${Math.floor(p / PROJECTS.length) + 1}` })
-    // Projects cluster around today, so the first screen is busy at any scroll position.
-    let cursor = today - (60 - Math.floor(random() * 30)) * DAY
+    // Projects cluster around today, so every screen is busy. The first one starts just before
+    // today, so its first tasks are on screen right away, even on a phone.
+    let cursor = p === 0 ? today - 10 * DAY : today - (60 - Math.floor(random() * 30)) * DAY
     let previous: { id: string; start: number } | null = null
 
     for (let t = 0; t < TASKS_PER_PROJECT && rows.length < rowCount; t++) {

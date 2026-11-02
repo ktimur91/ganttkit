@@ -205,7 +205,8 @@ const number = new Intl.NumberFormat('en')
     </Gantt>
 
     <footer class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-4 py-2 text-xs text-muted-foreground">
-      <span>Drag a bar to move it, its edges to resize, the dots to link. Ctrl or Cmd + scroll zooms. Select a link and press Delete to remove it.</span>
+      <span v-if="narrow">Drag a bar to move it, its edges to resize, the dots to link.</span>
+      <span v-else>Drag a bar to move it, its edges to resize, the dots to link. Ctrl or Cmd + scroll zooms. Select a link and press Delete to remove it.</span>
       <span v-if="violatedCount" class="ml-auto text-destructive tabular-nums">
         {{ number.format(violatedCount) }} broken links
       </span>
