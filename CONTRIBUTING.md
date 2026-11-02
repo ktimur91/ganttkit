@@ -11,6 +11,7 @@ Node 24 and pnpm 10.
 pnpm install
 pnpm dev        # playground on http://localhost:5280
 pnpm test       # core tests
+pnpm e2e        # browser tests, run `pnpm --filter playground exec playwright install` once
 pnpm typecheck
 ```
 

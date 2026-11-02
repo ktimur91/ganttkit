@@ -8,6 +8,7 @@
     "build": "pnpm --filter ganttkit build && pnpm --filter playground build",
     "test": "pnpm --filter ganttkit test",
     "typecheck": "pnpm -r typecheck",
-    "registry:build": "pnpm dlx shadcn-vue@2.9.0 build -o apps/playground/public/r"
+    "registry:build": "pnpm dlx shadcn-vue@2.9.0 build -o apps/playground/public/r",
+    "e2e": "pnpm --filter playground e2e"
   }
 }

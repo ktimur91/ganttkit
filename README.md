@@ -158,6 +158,7 @@ ganttkit is free and MIT licensed. If it saves you time, you can support its dev
 pnpm install
 pnpm dev            # playground on http://localhost:5280, ?zoom=month&theme=dark work too
 pnpm test           # core tests
+pnpm e2e            # Playwright: Chromium, Firefox, WebKit, Android and iPhone profiles
 pnpm typecheck
 pnpm registry:build
 ```
