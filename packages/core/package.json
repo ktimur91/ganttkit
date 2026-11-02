@@ -1,0 +1,36 @@
+{
+  "name": "ganttkit",
+  "version": "0.0.0",
+  "description": "Headless Gantt chart engine for Vue 3, with copy-in shadcn-vue components",
+  "keywords": ["vue", "vue3", "gantt", "gantt-chart", "timeline", "headless", "shadcn-vue", "tailwind"],
+  "license": "MIT",
+  "author": "Timur Kutumbaev",
+  "repository": { "type": "git", "url": "git+https://github.com/ktimur91/ganttkit.git", "directory": "packages/core" },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.0"
+  },
+  "dependencies": {
+    "@internationalized/date": "^3.12.4"
+  },
+  "devDependencies": {
+    "tsdown": "^0.23.4",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.5",
+    "vue": "^3.5.44"
+  }
+}

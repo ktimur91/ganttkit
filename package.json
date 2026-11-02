@@ -1,0 +1,16 @@
+{
+  "name": "ganttkit-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --filter playground dev",
+    "build": "pnpm --filter ganttkit build && pnpm --filter playground build",
+    "test": "pnpm --filter ganttkit test",
+    "typecheck": "pnpm -r typecheck",
+    "registry:build": "shadcn-vue build -o apps/playground/public/r"
+  },
+  "devDependencies": {
+    "shadcn-vue": "2.9.0"
+  }
+}

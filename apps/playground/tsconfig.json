@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@/components/ui/gantt": ["../../registry/gantt/index.ts"],
+      "@/components/ui/gantt/*": ["../../registry/gantt/*"],
+      "@/*": ["./src/*"],
+      "ganttkit": ["../../packages/core/src/index.ts"],
+      "vue": ["./node_modules/vue"]
+    }
+  },
+  "include": ["src", "../../registry", "vite.config.ts"]
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://shadcn-vue.com/schema/registry.json",
+  "name": "ganttkit",
+  "homepage": "https://github.com/ktimur91/ganttkit",
+  "items": [
+    {
+      "name": "gantt",
+      "type": "registry:ui",
+      "title": "Gantt",
+      "description": "Gantt chart with virtual scrolling, drag and drop, dependencies and zoom. Built on the headless ganttkit core.",
+      "dependencies": [
+        "ganttkit"
+      ],
+      "registryDependencies": [
+        "utils"
+      ],
+      "files": [
+        {
+          "path": "registry/gantt/Gantt.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttBar.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttGrid.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttLinks.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttRowLabel.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttTimescale.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttToday.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/context.ts",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/index.ts",
+          "type": "registry:ui"
+        }
+      ]
+    }
+  ]
+}
