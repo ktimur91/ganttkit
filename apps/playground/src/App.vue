@@ -136,6 +136,18 @@ const number = new Intl.NumberFormat('en')
           <span>{{ fps }} fps</span>
           <span>{{ number.format(domNodes) }} DOM nodes</span>
         </template>
+        <a
+          href="https://github.com/ktimur91/ganttkit"
+          class="hover:text-foreground"
+        >
+          GitHub
+        </a>
+        <a
+          href="https://ko-fi.com/ktimur91"
+          class="hover:text-foreground"
+        >
+          Sponsor
+        </a>
         <button
           type="button"
           class="rounded-md border px-2.5 py-1 hover:bg-accent hover:text-accent-foreground"

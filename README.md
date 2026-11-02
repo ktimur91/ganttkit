@@ -3,6 +3,7 @@
 [![npm](https://img.shields.io/npm/v/ganttkit)](https://www.npmjs.com/package/ganttkit)
 [![CI](https://github.com/ktimur91/ganttkit/actions/workflows/ci.yml/badge.svg)](https://github.com/ktimur91/ganttkit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/npm/l/ganttkit)](LICENSE)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/ktimur91)
 
 Gantt chart for Vue 3 that lives in your codebase.
 
@@ -144,6 +145,10 @@ See [`registry/gantt`](registry/gantt) for a complete implementation.
 
 - Bugs and feature requests: [Issues](https://github.com/ktimur91/ganttkit/issues)
 - Questions and ideas: [Discussions](https://github.com/ktimur91/ganttkit/discussions)
+
+ganttkit is free and MIT licensed. If it saves you time, you can support its development:
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ktimur91)
 
 ## Development
 

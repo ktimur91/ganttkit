@@ -6,6 +6,7 @@
   "license": "MIT",
   "author": "Timur Kutumbaev",
   "repository": { "type": "git", "url": "git+https://github.com/ktimur91/ganttkit.git", "directory": "packages/core" },
+  "funding": { "type": "ko-fi", "url": "https://ko-fi.com/ktimur91" },
   "type": "module",
   "sideEffects": false,
   "exports": {
