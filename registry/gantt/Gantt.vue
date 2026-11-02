@@ -12,7 +12,7 @@ import {
   type ZoomLevel,
   useGantt,
 } from 'ganttkit'
-import { type HTMLAttributes, nextTick, onMounted, provide, ref, useId } from 'vue'
+import { type HTMLAttributes, provide, ref, useId } from 'vue'
 import { cn } from '@/lib/utils'
 import { type GanttContext, GanttContextKey } from './context'
 import GanttBar from './GanttBar.vue'
@@ -37,8 +37,8 @@ const props = withDefaults(
     snap?: SnapUnit
     range?: { start: DateInput; end: DateInput }
     weekStartsOn?: number
-    /** Date to show on mount. Defaults to today. */
-    initialDate?: DateInput
+    /** Date centered when the chart first gets a size. Defaults to today, `null` keeps the start. */
+    initialDate?: DateInput | null
     class?: HTMLAttributes['class']
   }>(),
   { rowHeight: 36, sidebarWidth: 280, editable: true },
@@ -80,6 +80,7 @@ const gantt = useGantt<R, I>({
   snap: () => props.snap,
   range: () => props.range,
   weekStartsOn: props.weekStartsOn,
+  initialDate: () => props.initialDate,
   onItemChange(change) {
     emit('item-change', change)
     const replace = <T,>(list: readonly T[]) =>
@@ -109,11 +110,6 @@ provide(GanttContextKey, {
 })
 
 const { viewportEl, totalWidth, totalHeight, visibleRows, visibleBars } = gantt
-
-onMounted(async () => {
-  await nextTick()
-  gantt.scrollToDate(props.initialDate ?? new Date(), 'center')
-})
 
 // Ctrl/Cmd + wheel (and trackpad pinch) zooms around the pointer.
 let wheelDelta = 0

@@ -72,6 +72,11 @@ export interface UseGanttOptions<R extends GanttRowBase, I extends GanttItemBase
   weekStartsOn?: number
   editable?: MaybeRefOrGetter<boolean | Partial<GanttEditable> | undefined>
   isItemEditable?: (item: I) => boolean
+  /**
+   * Date centered once the viewport first gets a size (also when it was mounted hidden).
+   * Defaults to now, `null` keeps the scroll at the start.
+   */
+  initialDate?: MaybeRefOrGetter<DateInput | null | undefined>
   /** Snap step while dragging. Defaults to the zoom level's step. */
   snap?: MaybeRefOrGetter<SnapUnit | undefined>
   onItemChange?: (change: ItemChange<I>) => void
@@ -645,6 +650,15 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
       behavior,
     })
   }
+
+  // Center the initial date as soon as the timeline has a width, not just on mount.
+  let initialScrollDone = false
+  watch([viewportEl, timelineWidth], ([el, width]) => {
+    if (initialScrollDone || !el || width <= 0) return
+    initialScrollDone = true
+    const initial = toValue(options.initialDate)
+    if (initial !== null) void nextTick(() => scrollToDate(initial ?? Date.now(), 'center'))
+  }, { immediate: true })
 
   /** Changes zoom keeping the time under `anchorX` (px from the timeline's left edge) in place. */
   function setZoom(level: ZoomLevel, anchorX?: number) {
