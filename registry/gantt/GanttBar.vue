@@ -95,9 +95,10 @@ function onKeydown(event: KeyboardEvent) {
       </span>
     </div>
 
+    <!-- Offset past the link elbow (12px), so outgoing links do not cross the label. -->
     <span
       v-if="labelOutside && label"
-      class="pointer-events-none absolute top-1/2 left-full ml-2 -translate-y-1/2 text-xs whitespace-nowrap text-muted-foreground"
+      class="pointer-events-none absolute top-1/2 left-full ml-5 -translate-y-1/2 text-xs whitespace-nowrap text-muted-foreground"
       :class="summary && 'font-medium text-foreground'"
     >
       <slot>{{ label }}</slot>
