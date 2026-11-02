@@ -8,7 +8,8 @@ const SIZES = [1_000, 10_000, 50_000]
 const ZOOM_LABELS: Record<ZoomLevel, string> = { hour: 'Hour', day: 'Day', week: 'Week', month: 'Month', quarter: 'Quarter' }
 
 const size = ref(10_000)
-const zoom = ref<ZoomLevel>('week')
+const zoomParam = new URLSearchParams(location.search).get('zoom') as ZoomLevel | null
+const zoom = ref<ZoomLevel>(zoomParam && ZOOM_LEVELS.includes(zoomParam) ? zoomParam : 'week')
 const rows = shallowRef<DemoRow[]>([])
 const tasks = shallowRef<DemoTask[]>([])
 const links = shallowRef<GanttLink[]>([])
@@ -131,8 +132,10 @@ const number = new Intl.NumberFormat('en')
       </button>
 
       <div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
-        <span>{{ fps }} fps</span>
-        <span>{{ number.format(domNodes) }} DOM nodes</span>
+        <template v-if="fps">
+          <span>{{ fps }} fps</span>
+          <span>{{ number.format(domNodes) }} DOM nodes</span>
+        </template>
         <button
           type="button"
           class="rounded-md border px-2.5 py-1 hover:bg-accent hover:text-accent-foreground"

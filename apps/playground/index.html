@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ganttkit playground</title>
     <script>
-      if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && matchMedia('(prefers-color-scheme: dark)').matches)) {
+      // ?theme=dark|light wins, then the saved choice, then the system setting.
+      let theme = new URLSearchParams(location.search).get('theme')
+      try {
+        theme = theme || localStorage.getItem('theme')
+      } catch {}
+      if (theme === 'dark' || (!theme && matchMedia('(prefers-color-scheme: dark)').matches)) {
         document.documentElement.classList.add('dark')
       }
     </script>
