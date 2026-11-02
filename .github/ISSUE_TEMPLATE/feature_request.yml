@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest something ganttkit should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The task or the product you are building, not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How it could work
+      description: API, behavior or a screenshot from another tool.
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you send a pull request?
+      options:
+        - 'Yes'
+        - Maybe, with some guidance
+        - 'No'

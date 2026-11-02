@@ -1,0 +1,40 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: A link to a StackBlitz or repository, or the smallest code that shows the problem.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ganttkit version
+      placeholder: '0.1.1'
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Where
+      options:
+        - Copied components (shadcn-vue registry)
+        - Core (useGantt)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 140, macOS
