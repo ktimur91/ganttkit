@@ -111,18 +111,42 @@ provide(GanttContextKey, {
 
 const { viewportEl, totalWidth, totalHeight, visibleRows, visibleBars } = gantt
 
-// Ctrl/Cmd + wheel (and trackpad pinch) zooms around the pointer.
+function zoomAt(clientX: number, direction: 'in' | 'out') {
+  const box = viewportEl.value!.getBoundingClientRect()
+  const anchor = clientX - box.left - props.sidebarWidth
+  if (direction === 'in') gantt.zoomIn(anchor)
+  else gantt.zoomOut(anchor)
+}
+
+// Ctrl/Cmd + wheel (and trackpad pinch in Chrome and Firefox) zooms around the pointer.
 let wheelDelta = 0
 function onWheel(event: WheelEvent) {
   if (!event.ctrlKey && !event.metaKey) return
   event.preventDefault()
-  wheelDelta += event.deltaY
+  // Firefox reports mouse wheels in lines, not pixels.
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewportEl.value!.clientHeight : 1
+  wheelDelta += event.deltaY * unit
   if (Math.abs(wheelDelta) < 40) return
-  const box = viewportEl.value!.getBoundingClientRect()
-  const anchor = event.clientX - box.left - props.sidebarWidth
-  if (wheelDelta < 0) gantt.zoomIn(anchor)
-  else gantt.zoomOut(anchor)
+  zoomAt(event.clientX, wheelDelta < 0 ? 'in' : 'out')
   wheelDelta = 0
+}
+
+// Safari sends trackpad pinch as gesture events, without them it zooms the whole page.
+let gestureScale = 1
+function onGestureStart(event: Event) {
+  event.preventDefault()
+  gestureScale = 1
+}
+function onGestureChange(event: Event) {
+  event.preventDefault()
+  const { scale, clientX } = event as Event & { scale: number; clientX: number }
+  if (scale / gestureScale > 1.25) {
+    zoomAt(clientX, 'in')
+    gestureScale = scale
+  } else if (scale / gestureScale < 0.8) {
+    zoomAt(clientX, 'out')
+    gestureScale = scale
+  }
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -148,9 +172,12 @@ defineExpose({ gantt })
 <template>
   <div
     ref="viewportEl"
+    data-slot="gantt"
     :class="cn('relative overflow-auto overscroll-contain bg-background text-sm text-foreground', props.class)"
     tabindex="-1"
     @wheel="onWheel"
+    @gesturestart="onGestureStart"
+    @gesturechange="onGestureChange"
     @keydown="onKeydown"
   >
     <div
