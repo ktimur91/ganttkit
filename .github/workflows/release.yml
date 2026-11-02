@@ -1,10 +1,12 @@
 name: Release
 
-# Push a tag like v0.2.0 whose version matches packages/core/package.json.
+# Push a tag like v0.2.0 whose version matches packages/core/package.json,
+# or run it by hand to publish the version currently in packages/core.
 # Publishing uses npm trusted publishing (OIDC): no npm token is stored anywhere.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,9 +25,11 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - name: Check tag matches package version
+        if: github.ref_type == 'tag'
         run: test "v$(node -p "require('./packages/core/package.json').version")" = "$GITHUB_REF_NAME"
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter ganttkit build
-      - run: npm publish --provenance --access public
+      # Verbose: trusted publishing failures are only explained at this level.
+      - run: npm publish --provenance --access public --loglevel verbose
         working-directory: packages/core
