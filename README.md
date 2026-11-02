@@ -13,10 +13,7 @@ Gantt chart for Vue 3 that lives in your codebase.
 - **Copy-in components** in the shadcn-vue style: `npx shadcn-vue add` puts plain `.vue` files into `components/ui/gantt`. Restyle them with Tailwind, change the markup, keep the core updatable from npm.
 - **Fast with big plans**: 50 000 rows render about 40 rows and their bars. Scrolling recomputes the window only when it crosses a chunk of rows.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img alt="ganttkit playground with 10 000 rows at month zoom" src="docs/screenshot-light.png">
-</picture>
+![Dragging, resizing and linking bars, zooming with Ctrl + wheel and scrolling 10 000 rows](docs/demo.gif)
 
 ## Features
 
@@ -152,6 +149,10 @@ ganttkit is free and MIT licensed. If it saves you time, you can support its dev
 
 [![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ktimur91)
 
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the setup, the project layout and how to run the tests.
+
 ## Development
 
 ```bash
@@ -161,6 +162,7 @@ pnpm test           # core tests
 pnpm e2e            # Playwright: Chromium, Firefox, WebKit, Android and iPhone profiles
 pnpm typecheck
 pnpm registry:build
+pnpm --filter playground record:gif   # re-record docs/demo.gif, needs pnpm preview running
 ```
 
 ```
