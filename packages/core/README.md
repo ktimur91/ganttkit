@@ -11,8 +11,10 @@ Live demo: https://ktimur91.github.io/ganttkit/
 Components and core together, in a shadcn-vue project:
 
 ```bash
-npx shadcn-vue@latest add https://ktimur91.github.io/ganttkit/r/gantt.json
+npx shadcn-vue@latest add @ganttkit/gantt
 ```
+
+ganttkit is listed in the [shadcn-vue registry directory](https://www.shadcn-vue.com/docs/directory). With an older CLI use the full URL: `npx shadcn-vue@latest add https://ktimur91.github.io/ganttkit/r/gantt.json`
 
 Core only, for your own UI:
 

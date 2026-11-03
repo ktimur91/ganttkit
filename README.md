@@ -32,8 +32,10 @@ Vue 3.5+. The components also need Tailwind CSS v4 and a project set up with [sh
 ## Install
 
 ```bash
-npx shadcn-vue@latest add https://ktimur91.github.io/ganttkit/r/gantt.json
+npx shadcn-vue@latest add @ganttkit/gantt
 ```
+
+ganttkit is listed in the [shadcn-vue registry directory](https://www.shadcn-vue.com/docs/directory). With an older CLI use the full URL: `npx shadcn-vue@latest add https://ktimur91.github.io/ganttkit/r/gantt.json`
 
 This copies the components into `components/ui/gantt` and installs `ganttkit`. To build your own UI on the core only:
 
