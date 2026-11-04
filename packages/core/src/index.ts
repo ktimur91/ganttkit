@@ -11,6 +11,7 @@ export type {
   UseGanttOptions,
 } from './useGantt'
 export { ZOOM_LEVELS, ZOOM_PRESETS, buildTicks, type ZoomPreset } from './scale'
+export { useGanttHistory, type GanttHistoryOptions } from './history'
 export { applyDrag, createSnapper, nudgeSpan, type Snapper } from './drag'
 export { chunkedRange, flattenRows, type FlatRow } from './layout'
 export { isLinkViolated, linkPath, linkSides, linkTypeFromSides, wouldCreateCycle } from './links'
