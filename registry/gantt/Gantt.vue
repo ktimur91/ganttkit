@@ -8,20 +8,24 @@ import {
   type GanttRowBase,
   type GanttRowState,
   type ItemChange,
+  type SpanDescription,
   type SnapUnit,
   type WorkingCalendar,
   type ZoomLevel,
   useGantt,
 } from 'ganttkit'
-import { type HTMLAttributes, provide, ref, useId } from 'vue'
+import { type HTMLAttributes, computed, provide, ref, useId, useSlots } from 'vue'
 import { cn } from '@/lib/utils'
-import { type GanttContext, GanttContextKey } from './context'
+import { type GanttContext, GanttContextKey, type GanttMenuState } from './context'
 import GanttBar from './GanttBar.vue'
+import GanttExpandToggle from './GanttExpandToggle.vue'
 import GanttGrid from './GanttGrid.vue'
 import GanttLinks from './GanttLinks.vue'
+import GanttMenu from './GanttMenu.vue'
 import GanttRowLabel from './GanttRowLabel.vue'
 import GanttTimescale from './GanttTimescale.vue'
 import GanttToday from './GanttToday.vue'
+import GanttTooltip from './GanttTooltip.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -38,13 +42,25 @@ const props = withDefaults(
     /** Working days and holidays: edits keep lengths in working days and skip days off. */
     calendar?: WorkingCalendar
     snap?: SnapUnit
+    /** Overlapping items stack into lanes and the row grows. */
+    stackOverlaps?: boolean
+    /** Items a row can run at once before it is shaded as overloaded. Default 1. */
+    getRowCapacity?: (row: R) => number
+    /** Rows an item may be dragged to, e.g. not group headers. */
+    canMoveToRow?: (item: I, row: R) => boolean
+    /** Push successors forward after an edit so their links hold again. */
+    autoShift?: boolean
+    /** Dates and duration on hover, and the new ones while dragging. */
+    tooltip?: boolean
+    /** Right-click menu on bars with "Move to" another row and your own `menu` slot actions. */
+    contextMenu?: boolean
     range?: { start: DateInput; end: DateInput }
     weekStartsOn?: number
     /** Date centered when the chart first gets a size. Defaults to today, `null` keeps the start. */
     initialDate?: DateInput | null
     class?: HTMLAttributes['class']
   }>(),
-  { rowHeight: 36, sidebarWidth: 280, editable: true },
+  { rowHeight: 36, sidebarWidth: 280, editable: true, stackOverlaps: true, autoShift: false, tooltip: true, contextMenu: true },
 )
 
 const zoom = defineModel<ZoomLevel>('zoom', { default: 'week' })
@@ -54,6 +70,8 @@ const emit = defineEmits<{
   'update:items': [items: I[]]
   'update:links': [links: GanttLink[]]
   'item-change': [change: ItemChange<I>]
+  /** All changes of one edit: the edited item, then the successors `autoShift` moved. */
+  'items-change': [changes: ItemChange<I>[]]
   'item-click': [item: I]
   'link-create': [link: GanttLink]
   'link-delete': [link: GanttLink]
@@ -63,6 +81,8 @@ defineSlots<{
   'sidebar-header'?: () => unknown
   row?: (props: GanttRowState<R>) => unknown
   bar?: (props: GanttBarState<I>) => unknown
+  tooltip?: (props: { bar: GanttBarState<I>; description: SpanDescription; movingTo: R | null }) => unknown
+  menu?: (props: { item: I; close: () => void }) => unknown
   timeline?: () => unknown
 }>()
 
@@ -82,15 +102,23 @@ const gantt = useGantt<R, I>({
   isItemEditable: props.isItemEditable,
   calendar: () => props.calendar,
   snap: () => props.snap,
+  stackOverlaps: () => props.stackOverlaps,
+  getRowCapacity: props.getRowCapacity,
+  canMoveToRow: props.canMoveToRow,
+  autoShift: () => props.autoShift,
   range: () => props.range,
   weekStartsOn: props.weekStartsOn,
   initialDate: () => props.initialDate,
-  onItemChange(change) {
-    emit('item-change', change)
+  onItemsChange(changes) {
+    for (const change of changes) emit('item-change', change)
+    emit('items-change', changes)
+    const byItem = new Map<unknown, ItemChange<I>>(changes.map((change) => [change.item, change]))
     const replace = <T,>(list: readonly T[]) =>
-      list.map((entry) =>
-        entry === (change.item as unknown) ? { ...entry, start: change.start, end: change.end } : entry,
-      )
+      list.map((entry) => {
+        const change = byItem.get(entry)
+        if (!change) return entry
+        return { ...entry, start: change.start, end: change.end, ...(change.rowId !== undefined && { rowId: change.rowId }) }
+      })
     if (props.items) emit('update:items', replace(props.items))
     else emit('update:rows', replace(props.rows))
   },
@@ -102,6 +130,10 @@ const gantt = useGantt<R, I>({
 })
 
 const hoveredRowId = ref<string | null>(null)
+const hoveredItemId = ref<string | null>(null)
+const menu = ref<GanttMenuState | null>(null)
+const slots = useSlots()
+const menuEnabled = computed(() => props.contextMenu && (gantt.canReassign.value || !!slots.menu))
 const selectedItemId = ref<string | null>(null)
 const selectedLinkId = ref<string | null>(null)
 
@@ -109,6 +141,14 @@ provide(GanttContextKey, {
   ...(gantt as unknown as GanttContext),
   uid: useId(),
   hoveredRowId,
+  hoveredItemId,
+  menu,
+  menuEnabled,
+  openMenu: (itemId: string, x: number, y: number) => {
+    hoveredItemId.value = null
+    menu.value = { itemId, x, y }
+  },
+  closeMenu: () => (menu.value = null),
   selectedItemId,
   selectedLinkId,
 })
@@ -194,7 +234,10 @@ defineExpose({ gantt })
           :style="{ width: `${sidebarWidth}px` }"
         >
           <slot name="sidebar-header">
-            <div class="px-3 pb-2 text-xs font-medium text-muted-foreground">Name</div>
+            <div class="flex items-center gap-1 pb-1.5 pl-2 text-xs font-medium text-muted-foreground">
+              <GanttExpandToggle />
+              Name
+            </div>
           </slot>
         </div>
         <GanttTimescale class="shrink-0" :style="{ width: `${totalWidth}px` }" />
@@ -210,7 +253,7 @@ defineExpose({ gantt })
             :key="row.id"
             class="absolute inset-x-0 top-0 border-b border-border/60"
             :class="hoveredRowId === row.id && 'bg-muted/50'"
-            :style="{ height: `${rowHeight}px`, transform: `translateY(${row.top}px)` }"
+            :style="{ height: `${row.height}px`, transform: `translateY(${row.top}px)` }"
             @mouseenter="hoveredRowId = row.id"
             @mouseleave="hoveredRowId = null"
           >
@@ -238,5 +281,17 @@ defineExpose({ gantt })
         </div>
       </div>
     </div>
+
+    <GanttMenu v-if="menuEnabled">
+      <template v-if="$slots.menu" #default="slotProps">
+        <slot name="menu" v-bind="slotProps as any" />
+      </template>
+    </GanttMenu>
+
+    <GanttTooltip v-if="tooltip && !menu">
+      <template v-if="$slots.tooltip" #default="slotProps">
+        <slot name="tooltip" v-bind="slotProps as any" />
+      </template>
+    </GanttTooltip>
   </div>
 </template>

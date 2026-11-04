@@ -5,13 +5,14 @@ import { useGanttContext } from './context'
 
 const props = defineProps<{ row: GanttRowState<{ id: string | number; name?: string; title?: string }> }>()
 
-const { toggleRow } = useGanttContext()
+const { toggleRow, rowHeight } = useGanttContext()
 
 const label = computed(() => props.row.row.name ?? props.row.row.title ?? String(props.row.row.id))
 </script>
 
 <template>
-  <div class="flex h-full items-center gap-1 pr-3" :style="{ paddingLeft: `${8 + row.depth * 16}px` }">
+  <!-- One base row tall, so the name lines up with the first lane when the row grows. -->
+  <div class="flex items-center gap-1 pr-3" :style="{ height: `${rowHeight}px`, paddingLeft: `${8 + row.depth * 16}px` }">
     <button
       v-if="row.hasChildren"
       type="button"
@@ -35,5 +36,12 @@ const label = computed(() => props.row.row.name ?? props.row.row.title ?? String
     </button>
     <span v-else class="w-5 shrink-0" />
     <span class="truncate" :class="row.hasChildren && 'font-medium'">{{ label }}</span>
+    <span
+      v-if="row.overloads.length"
+      class="ml-auto size-2 shrink-0 rounded-full bg-destructive"
+      role="img"
+      aria-label="Overloaded"
+      title="Overloaded: more work at once than this row can take"
+    />
   </div>
 </template>

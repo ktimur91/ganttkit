@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useGanttContext } from './context'
 
-const { ticks, nonWorkingDays, visibleRows, rowHeight, windowRect, hoveredRowId } = useGanttContext()
+const { ticks, nonWorkingDays, visibleRows, windowRect, hoveredRowId } = useGanttContext()
 </script>
 
 <template>
@@ -27,10 +27,19 @@ const { ticks, nonWorkingDays, visibleRows, rowHeight, windowRect, hoveredRowId 
     :style="{
       left: `${windowRect.x}px`,
       width: `${windowRect.width}px`,
-      height: `${rowHeight}px`,
+      height: `${row.height}px`,
       transform: `translateY(${row.top}px)`,
     }"
     @mouseenter="hoveredRowId = row.id"
     @mouseleave="hoveredRowId = null"
-  />
+  >
+    <!-- More work at once than the row can take. -->
+    <div
+      v-for="span in row.overloads"
+      :key="span.start"
+      data-gantt-overload
+      class="pointer-events-none absolute inset-y-0 border-b-2 border-destructive/60 bg-destructive/10"
+      :style="{ left: `${span.x - windowRect.x}px`, width: `${span.width}px` }"
+    />
+  </div>
 </template>

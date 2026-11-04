@@ -9,7 +9,7 @@
       "title": "Gantt",
       "description": "Gantt chart with virtual scrolling, drag and drop, dependencies and zoom. Built on the headless ganttkit core.",
       "dependencies": [
-        "ganttkit@^0.2.0"
+        "ganttkit@^0.3.0"
       ],
       "files": [
         {
@@ -38,6 +38,18 @@
         },
         {
           "path": "registry/gantt/GanttToday.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttTooltip.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttMenu.vue",
+          "type": "registry:ui"
+        },
+        {
+          "path": "registry/gantt/GanttExpandToggle.vue",
           "type": "registry:ui"
         },
         {

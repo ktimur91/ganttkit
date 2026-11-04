@@ -1,6 +1,6 @@
 {
   "name": "ganttkit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Headless Gantt chart engine for Vue 3, with copy-in shadcn-vue components",
   "keywords": ["vue", "vue3", "gantt", "gantt-chart", "timeline", "headless", "shadcn-vue", "tailwind"],
   "license": "MIT",

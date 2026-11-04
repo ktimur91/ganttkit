@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { GanttBarState, GanttItemBase } from 'ganttkit'
-import { computed } from 'vue'
+import { computed, nextTick, useTemplateRef } from 'vue'
 import { cn } from '@/lib/utils'
 import { useGanttContext } from './context'
 
@@ -15,24 +15,44 @@ type BarItem = GanttItemBase & {
 const props = defineProps<{ bar: GanttBarState<BarItem> }>()
 const emit = defineEmits<{ select: [] }>()
 
-const { startDrag, startLink, nudge, editable, selectedItemId } = useGanttContext()
+const { startDrag, startLink, nudge, moveToRow, editable, selectedItemId, hoveredItemId, menuEnabled, openMenu } =
+  useGanttContext()
 
+const root = useTemplateRef<HTMLElement>('root')
 const item = computed(() => props.bar.item)
 const label = computed(() => item.value.name ?? item.value.title ?? '')
 const summary = computed(() => item.value.type === 'summary')
 const progress = computed(() => Math.min(1, Math.max(0, item.value.progress ?? 0)))
 const selected = computed(() => selectedItemId.value === props.bar.id)
-// Narrow bars show their label outside, to the right.
-const labelOutside = computed(() => props.bar.milestone || props.bar.width < 56)
+// Narrow bars show their label outside, to the right, when it fits before the next bar.
+const narrow = computed(() => props.bar.milestone || props.bar.width < 56)
+const labelOutside = computed(() => narrow.value && props.bar.room > 24 + label.value.length * 7)
 const canMove = computed(() => props.bar.editable && editable.value.move)
 const canResize = computed(() => props.bar.editable && editable.value.resize && !props.bar.milestone)
 const canLink = computed(() => props.bar.editable && editable.value.link)
 
+function onContextMenu(event: MouseEvent) {
+  if (!menuEnabled.value) return
+  event.preventDefault()
+  selectedItemId.value = props.bar.id
+  openMenu(props.bar.id, event.clientX, event.clientY)
+}
+
 function onKeydown(event: KeyboardEvent) {
   const steps = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
-  if (steps) {
+  const rows = event.altKey ? (event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0) : 0
+  if (rows) {
+    event.preventDefault()
+    moveToRow(props.bar.id, rows)
+    // Moving to another row reorders the bars, and a moved DOM node loses focus.
+    void nextTick(() => root.value?.focus())
+  } else if (steps) {
     event.preventDefault()
     nudge(props.bar.id, event.shiftKey ? 'resize-end' : 'move', steps)
+  } else if (menuEnabled.value && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+    event.preventDefault()
+    const box = root.value!.getBoundingClientRect()
+    openMenu(props.bar.id, box.left, box.bottom + 4)
   } else if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     emit('select')
@@ -42,6 +62,7 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <div
+    ref="root"
     :data-gantt-item="bar.id"
     role="button"
     tabindex="0"
@@ -60,7 +81,12 @@ function onKeydown(event: KeyboardEvent) {
       transform: `translate(${bar.x}px, ${bar.y}px)`,
     }"
     @pointerdown="startDrag($event, bar.id, 'move')"
+    @pointerenter="hoveredItemId = bar.id"
+    @pointerleave="hoveredItemId === bar.id && (hoveredItemId = null)"
+    @focus="($event.target as HTMLElement).matches(':focus-visible') && (hoveredItemId = bar.id)"
+    @blur="hoveredItemId === bar.id && (hoveredItemId = null)"
     @click="emit('select')"
+    @contextmenu="onContextMenu"
     @keydown="onKeydown"
   >
     <div
@@ -90,7 +116,7 @@ function onKeydown(event: KeyboardEvent) {
         class="absolute bottom-0 left-0 h-[3px] bg-primary-foreground/60"
         :style="{ width: `${progress * 100}%` }"
       />
-      <span v-if="!labelOutside" class="relative truncate px-2 text-xs">
+      <span v-if="!narrow" class="relative truncate px-2 text-xs">
         <slot>{{ label }}</slot>
       </span>
     </div>
