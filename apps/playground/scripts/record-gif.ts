@@ -8,7 +8,7 @@ import { type Page, chromium } from '@playwright/test'
 
 const URL = process.env.DEMO_URL ?? 'http://localhost:5281/?theme=light&zoom=week'
 const OUT = new globalThis.URL('../../../docs/demo.gif', import.meta.url).pathname
-const SIZE = { width: 1200, height: 680 }
+const SIZE = { width: 1280, height: 720 }
 
 // Headless recordings have no cursor, so draw one that follows the mouse.
 const CURSOR = `

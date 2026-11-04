@@ -71,6 +71,10 @@ export function generate(rowCount: number, seed = 7) {
       let start: number = parallel ? previous!.start + Math.floor(random() * 3) * DAY : cursor
       if (early) start -= (1 + Math.floor(random() * 2)) * DAY
       if (!parallel && random() < 0.2) start += Math.floor(random() * 4) * DAY
+      // Plans rarely start work on a weekend: move Saturday and Sunday starts to Monday.
+      const weekday = new Date(start).getUTCDay()
+      if (weekday === 6) start += 2 * DAY
+      else if (weekday === 0) start += DAY
       const duration = milestone ? 0 : 1 + Math.floor(random() * random() * 14)
       const end = start + duration * DAY
       const progress = end <= today ? 1 : start >= today ? 0 : Math.round(((today - start) / (end - start)) * 10) / 10

@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { type GanttInstance, type GanttLink, type ItemChange, type ZoomLevel, ZOOM_LEVELS, isLinkViolated, toMs } from 'ganttkit'
+import {
+  type GanttInstance,
+  type GanttLink,
+  type ItemChange,
+  type WorkingCalendar,
+  type ZoomLevel,
+  ZOOM_LEVELS,
+  createCalendar,
+  isLinkViolated,
+  localTimeZone,
+  toMs,
+  useGanttHistory,
+} from 'ganttkit'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from 'vue'
 import { Gantt, GanttRowLabel } from '@/components/ui/gantt'
 import { type DemoItem, type DemoRow, type DemoTask, generate, summarize } from './data'
@@ -14,24 +26,44 @@ const rows = shallowRef<DemoRow[]>([])
 const tasks = shallowRef<DemoTask[]>([])
 const links = shallowRef<GanttLink[]>([])
 
+const history = useGanttHistory(tasks)
+
 function load(count: number) {
   size.value = count
   const data = generate(count)
   rows.value = data.rows
   tasks.value = data.tasks
   links.value = data.links
+  history.clear()
 }
 load(size.value)
+
+// Working days: weekends and the winter holidays are off.
+const workingDays = ref(true)
+const year = new Date().getFullYear()
+const HOLIDAYS = [`${year}-12-25`, `${year}-12-26`, `${year + 1}-01-01`]
+const calendarRules = computed<WorkingCalendar | undefined>(() => (workingDays.value ? { holidays: HOLIDAYS } : undefined))
+const timeZone = localTimeZone()
+const calendar = computed(() => (calendarRules.value ? createCalendar(calendarRules.value, timeZone) : null))
 
 const items = computed<DemoItem[]>(() => [...summarize(rows.value, tasks.value), ...tasks.value])
 const itemsById = computed(() => new Map(items.value.map((item) => [item.id, item])))
 
 function onItemChange(change: ItemChange<DemoItem>) {
   const id = change.item.id
-  tasks.value = tasks.value.map((task) =>
-    task.id === id ? { ...task, start: change.start as string, end: change.end as string } : task,
+  history.commit(
+    tasks.value.map((task) => (task.id === id ? { ...task, start: change.start as string, end: change.end as string } : task)),
   )
 }
+
+function onKeydown(event: KeyboardEvent) {
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return
+  event.preventDefault()
+  if (event.shiftKey) history.redo()
+  else history.undo()
+}
+onMounted(() => addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => removeEventListener('keydown', onKeydown))
 
 const violatedCount = computed(() => {
   let count = 0
@@ -50,7 +82,10 @@ function rowMeta(id: string) {
   const item = itemsById.value.get(id)
   if (!item) return null
   const start = Date.parse(item.start)
-  return { start: dateFormat.format(start), days: Math.round((Date.parse(item.end) - start) / 86_400_000) }
+  const days = calendar.value
+    ? calendar.value.countWorkingDays(toMs(item.start, timeZone), toMs(item.end, timeZone))
+    : Math.round((Date.parse(item.end) - start) / 86_400_000)
+  return { start: dateFormat.format(start), days }
 }
 
 const chart = useTemplateRef<{ gantt: GanttInstance<DemoRow, DemoItem> }>('chart')
@@ -113,7 +148,7 @@ const number = new Intl.NumberFormat('en')
           :class="size === count ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="load(count)"
         >
-          {{ narrow ? `${count / 1000}k` : `${number.format(count)} rows` }}
+          {{ narrow ? `${count / 1000}k` : `${count / 1000}k rows` }}
         </button>
       </div>
 
@@ -138,11 +173,49 @@ const number = new Intl.NumberFormat('en')
         Today
       </button>
 
+      <div class="flex items-center gap-1 text-xs">
+        <button
+          type="button"
+          class="rounded-md border px-2.5 py-1"
+          :class="workingDays ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+          :aria-pressed="workingDays"
+          title="Skip weekends and holidays when moving and resizing"
+          @click="workingDays = !workingDays"
+        >
+          Working days
+        </button>
+        <button
+          type="button"
+          class="rounded-md border p-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          :disabled="!history.canUndo.value"
+          aria-label="Undo"
+          title="Undo (Ctrl or Cmd + Z)"
+          @click="history.undo()"
+        >
+          <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 14 4 9l5-5" />
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="rounded-md border p-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          :disabled="!history.canRedo.value"
+          aria-label="Redo"
+          title="Redo (Ctrl or Cmd + Shift + Z)"
+          @click="history.redo()"
+        >
+          <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m15 14 5-5-5-5" />
+            <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+          </svg>
+        </button>
+      </div>
+
       <div class="ml-auto flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
-        <template v-if="fps">
-          <span>{{ fps }} fps</span>
-          <span>{{ number.format(domNodes) }} DOM nodes</span>
-        </template>
+        <!-- Kept in the layout from the start, so the chart does not jump when the first numbers arrive. -->
+        <span :class="!fps && 'invisible'">{{ fps }} fps</span>
+        <span :class="!fps && 'invisible'">{{ number.format(domNodes) }} DOM nodes</span>
         <a
           href="https://github.com/ktimur91/ganttkit"
           class="hover:text-foreground"
@@ -172,6 +245,7 @@ const number = new Intl.NumberFormat('en')
       class="min-h-0 flex-1"
       locale="en"
       :rows="rows"
+      :calendar="calendarRules"
       :items="items"
       :sidebar-width="narrow ? 160 : 340"
       :is-item-editable="(item: DemoItem) => item.type !== 'summary'"
@@ -180,12 +254,12 @@ const number = new Intl.NumberFormat('en')
       <template #sidebar-header>
         <div
           class="grid w-full gap-2 px-3 pb-2 text-xs font-medium text-muted-foreground"
-          :class="narrow ? 'grid-cols-1' : 'grid-cols-[1fr_64px_40px]'"
+          :class="narrow ? 'grid-cols-1' : 'grid-cols-[1fr_64px_64px]'"
         >
           <span>Task</span>
           <template v-if="!narrow">
             <span>Start</span>
-            <span class="text-right">Days</span>
+            <span class="text-right">{{ workingDays ? 'Workdays' : 'Days' }}</span>
           </template>
         </div>
       </template>
@@ -193,7 +267,7 @@ const number = new Intl.NumberFormat('en')
       <template #row="row">
         <div
           class="grid h-full items-center gap-2 pr-3"
-          :class="narrow ? 'grid-cols-1' : 'grid-cols-[1fr_64px_40px]'"
+          :class="narrow ? 'grid-cols-1' : 'grid-cols-[1fr_64px_64px]'"
         >
           <GanttRowLabel :row="row" class="min-w-0 pr-0" />
           <template v-if="!narrow && rowMeta(row.id)">

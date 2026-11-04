@@ -13,6 +13,14 @@ async function open(page: Page, query = '') {
   })
   await page.goto(`/${query}`)
   await expect(page.locator('[data-gantt-item]').first()).toBeVisible()
+  // The chart centers today right after it gets a size; wait until that scroll has settled.
+  await page.waitForFunction(async () => {
+    const el = document.querySelector<HTMLElement>('[data-slot="gantt"]')!
+    const read = () => `${el.scrollLeft}:${el.scrollTop}`
+    const first = read()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    return el.scrollLeft > 0 && read() === first
+  })
   return errors
 }
 
@@ -29,6 +37,11 @@ async function visibleEditableBars(page: Page) {
       .map(({ id }) => id)
   })
   return ids.map((id) => page.locator(`[data-gantt-item="${id}"]`))
+}
+
+async function setWorkingDays(page: Page, on: boolean) {
+  const toggle = page.getByRole('button', { name: 'Working days' })
+  if ((await toggle.getAttribute('aria-pressed')) !== String(on)) await toggle.click()
 }
 
 async function drag(page: Page, from: { x: number; y: number }, dx: number, dy = 0) {
@@ -88,6 +101,8 @@ test.describe('pointer editing', () => {
 
   test('dragging a bar moves it by whole days', async ({ page }) => {
     await open(page)
+    // Calendar days here, working days have their own test.
+    await setWorkingDays(page, false)
     const [bar] = await visibleEditableBars(page)
     const before = await box(bar!)
     await drag(page, { x: before.x + before.width / 2, y: before.y + before.height / 2 }, 5 * DAY_PX + 4)
@@ -97,6 +112,8 @@ test.describe('pointer editing', () => {
 
   test('dragging the right edge resizes a bar', async ({ page }) => {
     await open(page)
+    // Calendar days here, working days have their own test.
+    await setWorkingDays(page, false)
     const [bar] = await visibleEditableBars(page)
     const before = await box(bar!)
     await drag(page, { x: before.x + before.width - 3, y: before.y + before.height / 2 }, 3 * DAY_PX)
@@ -115,6 +132,33 @@ test.describe('pointer editing', () => {
     const dot = await box(bars[0]!.getByRole('button', { name: 'Link from end' }))
     await drag(page, { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 }, to.x + 4 - (dot.x + dot.width / 2), to.y + to.height / 2 - (dot.y + dot.height / 2))
     await expect(links).toHaveCount(count + 1)
+  })
+
+  test('Ctrl + Z undoes a drag and Ctrl + Shift + Z redoes it', async ({ page }) => {
+    await open(page)
+    // Calendar days here, working days have their own test.
+    await setWorkingDays(page, false)
+    const [bar] = await visibleEditableBars(page)
+    const before = await box(bar!)
+    await drag(page, { x: before.x + before.width / 2, y: before.y + before.height / 2 }, 2 * DAY_PX + 4)
+    await expect.poll(async () => Math.round((await box(bar!)).x - before.x)).not.toBe(0)
+    const moved = (await box(bar!)).x
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect.poll(async () => Math.round((await box(bar!)).x)).toBe(Math.round(before.x))
+    await page.keyboard.press('ControlOrMeta+Shift+z')
+    await expect.poll(async () => Math.round((await box(bar!)).x)).toBe(Math.round(moved))
+  })
+
+  test('arrow keys move by working days', async ({ page }) => {
+    await open(page)
+    await setWorkingDays(page, true)
+    const [bar] = await visibleEditableBars(page)
+    await bar!.focus()
+    // The first step lands on a working day, five more are exactly one week.
+    await page.keyboard.press('ArrowRight')
+    const start = (await box(bar!)).x
+    for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight')
+    await expect.poll(async () => Math.round((await box(bar!)).x - start)).toBe(7 * DAY_PX)
   })
 
   test('Ctrl + wheel zooms', async ({ page }) => {
