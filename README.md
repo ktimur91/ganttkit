@@ -7,7 +7,7 @@
 
 Gantt chart for Vue 3 that lives in your codebase.
 
-**[Live demo](https://ktimur91.github.io/ganttkit/)** with 1 000 to 50 000 rows.
+**[Live demo](https://ktimur91.github.io/ganttkit/)** with 1 000 to 50 000 rows, and a [resource view](https://ktimur91.github.io/ganttkit/?view=resources) with up to 10 000 people.
 
 - **Headless core** (`ganttkit` on npm): `useGantt` handles dates, time zones, layout, virtual scrolling, drag and drop, dependencies and zoom. No styles, no DOM assumptions beyond a scroll container.
 - **Copy-in components** in the shadcn-vue style: `npx shadcn-vue add` puts plain `.vue` files into `components/ui/gantt`. Restyle them with Tailwind, change the markup, keep the core updatable from npm.
@@ -17,9 +17,13 @@ Gantt chart for Vue 3 that lives in your codebase.
 
 ## Features
 
-- Tasks, milestones and summary bars, nested rows with collapse
+- Tasks, milestones and summary bars, nested rows with collapse, one header button collapses or expands all
 - Drag to move, drag edges to resize, keyboard nudging (arrows move, Shift + arrows resize)
 - Dependencies: FS, SS, FF, SF. Create by dragging from a bar's dot, cycle and duplicate protection, broken links highlighted, Delete removes the selected link
+- Auto-shift: when a task moves past its successors, they move forward with it, keeping their length
+- Resource view: overlapping bars stack into lanes and the row grows, double bookings are marked, drag a bar to another row or press Alt + Up/Down
+- Right-click menu on a bar: "Move to" with search, free rows first and busy ones marked, plus your own actions
+- Tooltip with dates and duration, showing the new ones while you drag
 - Zoom levels from hours to quarters, Ctrl/Cmd + wheel zooms around the pointer
 - Working calendars: weekends and holidays are skipped when you drag, resize or nudge, lengths stay in working days, days off are shaded
 - Undo and redo with `useGanttHistory`
@@ -67,11 +71,7 @@ const links = ref([{ id: 1, from: 'design', to: 'build' }])
 </template>
 ```
 
-Rows and bars can be separate, for example several shifts in one person's row. Each shift has a `rowId`:
-
-```vue
-<Gantt :rows="people" v-model:items="shifts" time-zone="Asia/Almaty" zoom="hour" />
-```
+Rows and bars can be separate, for example bookings in people's rows. Each booking has a `rowId`, see [Resources](#resources).
 
 ### Data model
 
@@ -98,8 +98,14 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | `row-height` | `36` | Row height in px. |
 | `sidebar-width` | `280` | Sidebar width in px. |
 | `calendar` | | Working days and holidays, see [Working calendars](#working-calendars). |
-| `editable` | `true` | `false`, or `{ move, resize, link }` to switch parts off. |
+| `editable` | `true` | `false`, or `{ move, resize, link, reassign }` to switch parts off. |
 | `is-item-editable` | | `(item) => boolean`, e.g. to lock summary bars. |
+| `auto-shift` | `false` | Push successors forward after an edit, see [Auto-shift](#auto-shift). |
+| `stack-overlaps` | `true` | Overlapping bars of a row stack into lanes and the row grows. |
+| `get-row-capacity` | `1` | `(row) => number`: bars a row can run at once before it counts as overloaded. |
+| `can-move-to-row` | all rows | `(item, row) => boolean`: rows a bar may be dragged to. |
+| `tooltip` | `true` | Dates and duration on hover and while dragging. |
+| `context-menu` | `true` | Right-click menu on bars, see [Resources](#resources). |
 | `snap` | by zoom | `'hour' \| 'day' \| 'week'`, a step in ms, or `false`. |
 | `range` | from items | Fixed `{ start, end }` of the timeline. |
 | `week-starts-on` | `1` | `0` for Sunday. |
@@ -110,7 +116,8 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | event | payload |
 | --- | --- |
 | `update:rows`, `update:items`, `update:links` | New array, for `v-model`. `update:rows` fires in one-task-per-row mode. |
-| `item-change` | `{ item, start, end, startMs, endMs }` with dates in the item's own format. |
+| `item-change` | `{ item, start, end, startMs, endMs, rowId?, source }` with dates in the item's own format. `rowId` is set when the bar moved to another row, `source` is `'edit'` or `'auto-shift'`. Fires once per changed item. |
+| `items-change` | All changes of one edit at once: the edited item first, then the successors auto-shift moved. Use it for one undo step or one save request. |
 | `item-click` | The item. |
 | `link-create`, `link-delete` | The link. |
 
@@ -119,9 +126,37 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | slot | props |
 | --- | --- |
 | `sidebar-header` | |
-| `row` | `{ row, id, depth, hasChildren, expanded, top }` |
-| `bar` | Bar state: `{ item, start, end, x, y, width, height, milestone, dragging }` |
+| `row` | `{ row, id, depth, hasChildren, expanded, top, height, lanes, overloads }` |
+| `bar` | Bar state: `{ item, start, end, x, y, width, height, lane, milestone, dragging }` |
+| `tooltip` | `{ bar, description: { dates, duration }, movingTo }`, `movingTo` is the target row while a bar is dragged to another one. |
+| `menu` | `{ item, close }`: your own actions at the top of the right-click menu. With this slot the menu opens in every mode, not only for resources. |
 | `timeline` | Extra layers inside the timeline, e.g. markers. |
+
+### Resources
+
+Pass people (or machines, rooms) as `rows` and their bookings as `items` with a `rowId`:
+
+```vue
+<Gantt
+  :rows="people"
+  v-model:items="bookings"
+  :can-move-to-row="(booking, person) => !person.isTeam"
+  :get-row-capacity="(person) => person.capacity ?? 1"
+/>
+```
+
+- Bookings that overlap stack into lanes, and the row grows to fit them. Pass `:stack-overlaps="false"` to draw them on top of each other instead.
+- Where a row runs more bookings at once than its capacity, the time is shaded red and the row gets a red dot. `gantt.overloads` maps row ids to these time ranges, e.g. for a "3 people double-booked" counter.
+- Right-click a booking (or press the Menu key or Shift + F10 on a focused one) for "Move to": a searchable list of rows, free ones first, the ones already busy at that time marked. It reaches collapsed rows too, so you do not have to drag past fifty people. `gantt.moveTargets(id)` and `gantt.moveItemToRow(id, rowId)` give you the same in your own UI.
+- Dragging a booking up or down moves it to another row, Alt + Up/Down does the same from the keyboard. `item-change` then carries the new `rowId`, and `v-model:items` writes it into the booking. Rows rejected by `can-move-to-row` are skipped.
+
+### Auto-shift
+
+```vue
+<Gantt :rows="tasks" v-model:links="links" auto-shift @items-change="save" />
+```
+
+When an edit breaks a link (a task now ends after its successor starts), the successor moves forward just enough, and so on down the chain. Lengths stay the same, in working days with a [calendar](#working-calendars). Items only move later, never earlier, and read-only items stay put with their link shown as broken. The drag preview shows the shifted tasks before you let go.
 
 ### Working calendars
 
@@ -144,7 +179,7 @@ With a calendar and day snapping (day, week and month zoom), moving a task keeps
 
 ### Undo, redo and optimistic saves
 
-`item-change` fires once, when a drag ends. Your app owns the data, so undo and rollback are a matter of keeping the previous array:
+`item-change` fires once per item, when a drag ends. Your app owns the data, so undo and rollback are a matter of keeping the previous array:
 
 ```ts
 import { useGanttHistory } from 'ganttkit'
@@ -169,6 +204,18 @@ async function onItemChange({ item, start, end }: ItemChange<Task>) {
 
 Snapshots are the array references, so keep updates immutable (`map`, spread) and nothing gets copied.
 
+With `auto-shift` one edit can change several tasks. Listen to `items-change` instead to make it one undo step:
+
+```ts
+function onItemsChange(changes: ItemChange<Task>[]) {
+  const byId = new Map(changes.map((change) => [change.item.id, change]))
+  history.commit(tasks.value.map((t) => {
+    const change = byId.get(t.id)
+    return change ? { ...t, start: change.start, end: change.end } : t
+  }))
+}
+```
+
 ### Headless
 
 ```ts
@@ -187,6 +234,8 @@ const gantt = useGantt({
 // Bind the scroll container: gantt.viewportEl.value = element
 // Render gantt.visibleRows, gantt.visibleBars, gantt.visibleLinks and gantt.ticks
 // Wire gantt.startDrag(event, id, mode) and gantt.startLink(event, id, side)
+// Keyboard: gantt.nudge(id, mode, steps) and gantt.moveToRow(id, 1 | -1)
+// Rows: gantt.toggleRow(id), gantt.expandAll(), gantt.collapseAll(), gantt.allExpanded
 ```
 
 See [`registry/gantt`](registry/gantt) for a complete implementation.
