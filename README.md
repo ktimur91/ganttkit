@@ -21,6 +21,8 @@ Gantt chart for Vue 3 that lives in your codebase.
 - Drag to move, drag edges to resize, keyboard nudging (arrows move, Shift + arrows resize)
 - Dependencies: FS, SS, FF, SF. Create by dragging from a bar's dot, cycle and duplicate protection, broken links highlighted, Delete removes the selected link
 - Zoom levels from hours to quarters, Ctrl/Cmd + wheel zooms around the pointer
+- Working calendars: weekends and holidays are skipped when you drag, resize or nudge, lengths stay in working days, days off are shaded
+- Undo and redo with `useGanttHistory`
 - Time zone aware: day, week and month boundaries follow the zone you pass, DST days are 23 or 25 hours long
 - Edits come back in your date format: `'2026-11-02'` stays a date string, `Date` stays a `Date`
 - Light and dark theme through shadcn-vue CSS variables
@@ -95,6 +97,7 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | `locale` | browser locale | Locale for the timescale labels. |
 | `row-height` | `36` | Row height in px. |
 | `sidebar-width` | `280` | Sidebar width in px. |
+| `calendar` | | Working days and holidays, see [Working calendars](#working-calendars). |
 | `editable` | `true` | `false`, or `{ move, resize, link }` to switch parts off. |
 | `is-item-editable` | | `(item) => boolean`, e.g. to lock summary bars. |
 | `snap` | by zoom | `'hour' \| 'day' \| 'week'`, a step in ms, or `false`. |
@@ -119,6 +122,52 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | `row` | `{ row, id, depth, hasChildren, expanded, top }` |
 | `bar` | Bar state: `{ item, start, end, x, y, width, height, milestone, dragging }` |
 | `timeline` | Extra layers inside the timeline, e.g. markers. |
+
+### Working calendars
+
+```vue
+<Gantt
+  :rows="tasks"
+  :calendar="{ holidays: ['2026-12-25', '2026-12-26', '2027-01-01'] }"
+/>
+```
+
+| field | default | |
+| --- | --- | --- |
+| `workingWeekdays` | `[1, 2, 3, 4, 5]` | Working days of the week, `0` is Sunday. |
+| `holidays` | | Days off on top of the weekly pattern, as `YYYY-MM-DD` or `Date`. |
+| `workingDates` | | Working days that override the pattern, e.g. a working Saturday. |
+
+With a calendar and day snapping (day, week and month zoom), moving a task keeps its length in working days, a day off under the pointer snaps to the next working day, and arrow keys step by working days. At the hour zoom the calendar only shades days off. Days off are shaded wherever a day is at least 10px wide (hour, day and week zoom). Without a calendar, weekends are shaded and edits use calendar days.
+
+`createCalendar(rules, timeZone)` gives you the same rules in your own code, for example `countWorkingDays(start, end)` for a duration column.
+
+### Undo, redo and optimistic saves
+
+`item-change` fires once, when a drag ends. Your app owns the data, so undo and rollback are a matter of keeping the previous array:
+
+```ts
+import { useGanttHistory } from 'ganttkit'
+
+const tasks = shallowRef(initialTasks)
+const history = useGanttHistory(tasks)
+
+async function onItemChange({ item, start, end }: ItemChange<Task>) {
+  const update = (from: DateInput, to: DateInput) =>
+    history.commit(tasks.value.map((t) => (t.id === item.id ? { ...t, start: from, end: to } : t)))
+  update(start, end)
+  try {
+    await api.saveTask(item.id, start, end)
+  } catch {
+    // `item` is the unchanged task, so it still holds the old dates.
+    update(item.start, item.end)
+  }
+}
+
+// history.undo(), history.redo(), history.canUndo, history.canRedo
+```
+
+Snapshots are the array references, so keep updates immutable (`map`, spread) and nothing gets copied.
 
 ### Headless
 
