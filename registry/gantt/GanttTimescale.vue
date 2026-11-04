@@ -27,7 +27,7 @@ const { ticks, sidebarWidth } = useGanttContext()
         v-for="tick in ticks.bottom"
         :key="tick.key"
         class="absolute inset-y-0 flex items-center justify-center gap-1 overflow-hidden border-l text-muted-foreground"
-        :class="tick.weekend && 'text-muted-foreground/60'"
+        :class="tick.nonWorking && 'text-muted-foreground/60'"
         :style="{ left: `${tick.x}px`, width: `${tick.width}px` }"
       >
         <span v-if="tick.sublabel" class="text-[10px] uppercase opacity-70">{{ tick.sublabel }}</span>

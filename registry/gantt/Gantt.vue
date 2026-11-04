@@ -9,6 +9,7 @@ import {
   type GanttRowState,
   type ItemChange,
   type SnapUnit,
+  type WorkingCalendar,
   type ZoomLevel,
   useGantt,
 } from 'ganttkit'
@@ -34,6 +35,8 @@ const props = withDefaults(
     sidebarWidth?: number
     editable?: boolean | Partial<GanttEditable>
     isItemEditable?: (item: I) => boolean
+    /** Working days and holidays: edits keep lengths in working days and skip days off. */
+    calendar?: WorkingCalendar
     snap?: SnapUnit
     range?: { start: DateInput; end: DateInput }
     weekStartsOn?: number
@@ -77,6 +80,7 @@ const gantt = useGantt<R, I>({
   headerHeight: HEADER_HEIGHT,
   editable: () => props.editable,
   isItemEditable: props.isItemEditable,
+  calendar: () => props.calendar,
   snap: () => props.snap,
   range: () => props.range,
   weekStartsOn: props.weekStartsOn,
