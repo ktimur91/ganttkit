@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chunkedRange, flattenRows } from '../src/layout'
+import { chunkedRange, chunkedRowRange, flattenRows, rowIndexAt } from '../src/layout'
 
 interface Row {
   id: string
@@ -86,5 +86,28 @@ describe('chunkedRange', () => {
   it('is empty without size or items', () => {
     expect(chunkedRange(0, 0, 36, 1000, 10)).toEqual({ start: 0, end: 0 })
     expect(chunkedRange(0, 400, 36, 0, 10)).toEqual({ start: 0, end: 0 })
+  })
+})
+
+describe('rows of different heights', () => {
+  // Heights 36, 76, 36, 36.
+  const offsets = [0, 36, 112, 148, 184]
+
+  it('finds the row containing a y', () => {
+    expect(rowIndexAt(offsets, 0)).toBe(0)
+    expect(rowIndexAt(offsets, 35.9)).toBe(0)
+    expect(rowIndexAt(offsets, 36)).toBe(1)
+    expect(rowIndexAt(offsets, 111)).toBe(1)
+    expect(rowIndexAt(offsets, 150)).toBe(3)
+    expect(rowIndexAt(offsets, 999)).toBe(3)
+    expect(rowIndexAt(offsets, -5)).toBe(0)
+    expect(rowIndexAt([0], 10)).toBe(-1)
+  })
+
+  it('matches chunkedRange when all rows are equal', () => {
+    const equal = Array.from({ length: 1001 }, (_, i) => i * 36)
+    for (const scroll of [0, 500, 12_345, 35_000]) {
+      expect(chunkedRowRange(equal, scroll, 700, 10)).toEqual(chunkedRange(scroll, 700, 36, 1000, 10))
+    }
   })
 })

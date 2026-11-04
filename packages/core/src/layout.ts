@@ -89,6 +89,31 @@ export function chunkedRange(
   return { start, end: Math.max(start, end) }
 }
 
+/** Index of the row containing `y`, clamped to the rows. `offsets` holds each row's top plus the total height at the end. */
+export function rowIndexAt(offsets: ArrayLike<number>, y: number): number {
+  const count = offsets.length - 1
+  if (count <= 0) return -1
+  let low = 0
+  let high = count - 1
+  while (low < high) {
+    const mid = (low + high + 1) >> 1
+    if (offsets[mid]! <= y) low = mid
+    else high = mid - 1
+  }
+  return low
+}
+
+/** `chunkedRange` for rows of different heights. */
+export function chunkedRowRange(offsets: ArrayLike<number>, offset: number, size: number, chunk: number): IndexRange {
+  const count = offsets.length - 1
+  if (count <= 0 || size <= 0) return { start: 0, end: 0 }
+  const first = rowIndexAt(offsets, Math.max(0, offset))
+  const last = rowIndexAt(offsets, offset + size) + 1
+  const start = Math.min(count, Math.max(0, (Math.floor(first / chunk) - 1) * chunk))
+  const end = Math.min(count, (Math.ceil(last / chunk) + 1) * chunk)
+  return { start, end: Math.max(start, end) }
+}
+
 export function sameRange(a: IndexRange | undefined, b: IndexRange): boolean {
   return !!a && a.start === b.start && a.end === b.end
 }

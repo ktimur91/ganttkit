@@ -11,8 +11,10 @@ import {
 } from 'vue'
 import { type WorkingCalendar, createCalendar } from './calendar'
 import { type Snapper, applyDrag, createSnapper, nudgeSpan } from './drag'
-import { type FlatRow, chunkedRange, flattenRows, sameRange } from './layout'
+import { type LaneLayout, assignLanes, freeLane, overloadSpans } from './lanes'
+import { type FlatRow, chunkedRange, chunkedRowRange, flattenRows, rowIndexAt, sameRange } from './layout'
 import { isLinkViolated, linkPath, linkTypeFromSides, wouldCreateCycle } from './links'
+import { indexLinks, shiftSuccessors } from './schedule'
 import { ZOOM_LEVELS, ZOOM_PRESETS, buildTicks } from './scale'
 import { DAY, addUnits, floorTo, formatLike, localTimeZone, toMs } from './time'
 import type {
@@ -27,6 +29,7 @@ import type {
   NonWorkingDay,
   Rect,
   SnapUnit,
+  Span,
   Tick,
   ZoomLevel,
 } from './types'
@@ -35,6 +38,8 @@ export interface GanttEditable {
   move: boolean
   resize: boolean
   link: boolean
+  /** Dragging an item to another row. Only with separate `items`, see `canMoveToRow`. */
+  reassign: boolean
 }
 
 export interface ItemChange<I> {
@@ -44,6 +49,10 @@ export interface ItemChange<I> {
   end: DateInput
   startMs: number
   endMs: number
+  /** New row id, set only when the item was moved to another row. */
+  rowId?: Id
+  /** `auto-shift` for successors pushed forward by `autoShift`, `edit` for the item the user changed. */
+  source: 'edit' | 'auto-shift'
 }
 
 export interface LinkDraft {
@@ -86,7 +95,23 @@ export interface UseGanttOptions<R extends GanttRowBase, I extends GanttItemBase
   calendar?: MaybeRefOrGetter<WorkingCalendar | undefined>
   /** Snap step while dragging. Defaults to the zoom level's step. */
   snap?: MaybeRefOrGetter<SnapUnit | undefined>
+  /** Items that overlap in time stack into lanes and the row grows. Default `true`. */
+  stackOverlaps?: MaybeRefOrGetter<boolean | undefined>
+  /** Vertical gap between stacked lanes. Default 4. */
+  laneGap?: MaybeRefOrGetter<number | undefined>
+  /** How many items a row can run at once before it counts as overloaded. Default 1. */
+  getRowCapacity?: (row: R) => number
+  /** Rows an item may be dragged to, e.g. not group headers. All rows by default. */
+  canMoveToRow?: (item: I, row: R) => boolean
+  /**
+   * After an edit, push successors forward so their links hold again, keeping their length.
+   * Items only move later, never earlier. Off by default.
+   */
+  autoShift?: MaybeRefOrGetter<boolean | undefined>
+  /** Called for every changed item, the edited one first, then the ones moved by `autoShift`. */
   onItemChange?: (change: ItemChange<I>) => void
+  /** All changes of one edit at once, for a single undo step or one save request. */
+  onItemsChange?: (changes: ItemChange<I>[]) => void
   onLinkCreate?: (link: LinkDraft) => void
 }
 
@@ -98,8 +123,28 @@ interface NormalizedItem<I> {
   end: number
 }
 
+export interface OverloadSpan extends Span {
+  x: number
+  width: number
+}
+
+/** A row an item can be moved to, for a "Move to" menu. */
+export interface MoveTarget<R> {
+  id: string
+  row: R
+  /** Parent row, e.g. the team of a person. */
+  parent: R | null
+  /** The row already runs as much at that time as its capacity allows: moving there overloads it. */
+  busy: boolean
+}
+
 export interface GanttRowState<R> extends FlatRow<R> {
   top: number
+  height: number
+  /** Lanes of stacked overlapping items, 1 when nothing overlaps. */
+  lanes: number
+  /** Where the row runs more items at once than its capacity, in timeline coordinates. */
+  overloads: OverloadSpan[]
 }
 
 export interface GanttBarState<I> extends Rect {
@@ -107,6 +152,9 @@ export interface GanttBarState<I> extends Rect {
   item: I
   rowId: string
   rowIndex: number
+  lane: number
+  /** Free px to the right before the next item in the same lane, `Infinity` when there is none. For outside labels. */
+  room: number
   start: number
   end: number
   milestone: boolean
@@ -122,12 +170,19 @@ export interface GanttLinkState {
   violated: boolean
 }
 
-interface Draft {
+export interface GanttDraft {
   id: string
+  /** Row the item is in. */
+  fromRowId: string
+  /** Row under the pointer, `fromRowId` unless the item is being moved to another row. */
+  rowId: string
   start: number
   end: number
   mode: DragMode
 }
+
+const NO_LAYOUTS: ReadonlyMap<string, LaneLayout> = new Map()
+const NO_SPANS: ReadonlyMap<string, Span[]> = new Map()
 
 const ROW_CHUNK = 10
 const X_CHUNK = 600
@@ -136,9 +191,14 @@ const AUTOSCROLL_EDGE = 40
 const AUTOSCROLL_MAX_SPEED = 24
 
 function normalizeEditable(value: boolean | Partial<GanttEditable> | undefined): GanttEditable {
-  if (value === undefined || value === true) return { move: true, resize: true, link: true }
-  if (value === false) return { move: false, resize: false, link: false }
-  return { move: value.move ?? true, resize: value.resize ?? true, link: value.link ?? true }
+  if (value === undefined || value === true) return { move: true, resize: true, link: true, reassign: true }
+  if (value === false) return { move: false, resize: false, link: false, reassign: false }
+  return {
+    move: value.move ?? true,
+    resize: value.resize ?? true,
+    link: value.link ?? true,
+    reassign: value.reassign ?? true,
+  }
 }
 
 export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & GanttItemBase>(
@@ -151,6 +211,10 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   const msPerPx = computed(() => preset.value.msPerPx)
   const rowHeight = computed(() => toValue(options.rowHeight) ?? 36)
   const barInset = computed(() => toValue(options.barInset) ?? 7)
+  const stackOverlaps = computed(() => toValue(options.stackOverlaps) ?? true)
+  const laneGap = computed(() => toValue(options.laneGap) ?? 4)
+  const lanePitch = computed(() => rowHeight.value - barInset.value * 2 + laneGap.value)
+  const autoShift = computed(() => toValue(options.autoShift) ?? false)
   const sidebarWidth = computed(() => toValue(options.sidebarWidth) ?? 280)
   const headerHeight = computed(() => toValue(options.headerHeight) ?? 56)
   const weekStartsOn = options.weekStartsOn ?? 1
@@ -193,6 +257,11 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   function expandAll() {
     collapsed.value = new Set()
   }
+
+  /** True when no row is collapsed. */
+  const allExpanded = computed(() => collapsed.value.size === 0)
+  /** True when some row has children, i.e. there is something to collapse. */
+  const hasNestedRows = computed(() => flatRows.value.some((row) => row.hasChildren))
 
   function collapseAll() {
     const next = new Set<string>()
@@ -239,7 +308,111 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     return { byId, byRow, min, max }
   })
 
+  /** Row reassignment only makes sense when items live apart from rows. */
+  const canReassign = computed(
+    () => editable.value.move && editable.value.reassign && toValue(options.items) != null,
+  )
+
+  const rowById = computed(() => {
+    const map = new Map<string, R>()
+    if (!options.getRowCapacity) return map
+    for (const row of toValue(options.rows)) map.set(String(getRowId(row)), row)
+    return map
+  })
+  function capacityOf(rowId: string): number {
+    const row = options.getRowCapacity ? rowById.value.get(rowId) : undefined
+    return row ? Math.max(1, options.getRowCapacity!(row)) : 1
+  }
+
+  /** The item being dragged: its span and row while the pointer is down. */
+  const draft = shallowRef<GanttDraft | null>(null)
+  /** Successors `autoShift` would push, previewed while dragging. */
+  const shiftDraft = shallowRef<ReadonlyMap<string, Span> | null>(null)
+
+  function spanOf(normalized: NormalizedItem<I>): Span {
+    const active = draft.value
+    if (active?.id === normalized.id) return active
+    return shiftDraft.value?.get(normalized.id) ?? normalized
+  }
+
+  // Lanes and overloads
+
+  const committedLanes = computed(() => {
+    if (!stackOverlaps.value) return NO_LAYOUTS
+    const map = new Map<string, LaneLayout>()
+    for (const [rowId, items] of itemIndex.value.byRow) {
+      if (items.length > 1) map.set(rowId, assignLanes(items))
+    }
+    return map
+  })
+
+  /** Items of a row while dragging: the dragged one leaves its row and joins the one under the pointer. */
+  function draftRowItems(rowId: string, active: GanttDraft) {
+    const others = (itemIndex.value.byRow.get(rowId) ?? []).filter((item) => item.id !== active.id)
+    return { others, withDraft: rowId === active.rowId }
+  }
+
+  /**
+   * Lanes of the rows the drag touches. The other items keep their lanes and the dragged one takes
+   * the first free lane, so nothing jumps under the pointer. A full relayout happens on drop.
+   */
+  const draftLanes = computed(() => {
+    const active = draft.value
+    if (!active || !stackOverlaps.value) return NO_LAYOUTS
+    const map = new Map<string, LaneLayout>()
+    for (const rowId of new Set([active.fromRowId, active.rowId])) {
+      const { others, withDraft } = draftRowItems(rowId, active)
+      if (!others.length) continue
+      const committed = committedLanes.value.get(rowId)
+      const lanes = new Map<string, number>()
+      const placed = others.map((item) => ({ start: item.start, end: item.end, lane: committed?.lanes.get(item.id) ?? 0 }))
+      let count = 1
+      others.forEach((item, i) => {
+        lanes.set(item.id, placed[i]!.lane)
+        count = Math.max(count, placed[i]!.lane + 1)
+      })
+      if (withDraft) {
+        const lane = freeLane(active, placed)
+        lanes.set(active.id, lane)
+        count = Math.max(count, lane + 1)
+      }
+      map.set(rowId, { lanes, count })
+    }
+    return map.size ? map : NO_LAYOUTS
+  })
+
+  function laneLayout(rowId: string): LaneLayout | undefined {
+    return draftLanes.value.get(rowId) ?? committedLanes.value.get(rowId)
+  }
+
+  /** Overloaded time ranges by row id, for rows that have any. Saved data only, not the drag preview. */
+  const overloads = computed(() => {
+    const map = new Map<string, Span[]>()
+    for (const [rowId, items] of itemIndex.value.byRow) {
+      const capacity = capacityOf(rowId)
+      if (items.length <= capacity) continue
+      const spans = overloadSpans(items, capacity)
+      if (spans.length) map.set(rowId, spans)
+    }
+    return map
+  })
+
+  const draftOverloads = computed(() => {
+    const active = draft.value
+    if (!active) return NO_SPANS
+    const map = new Map<string, Span[]>()
+    for (const rowId of new Set([active.fromRowId, active.rowId])) {
+      const { others, withDraft } = draftRowItems(rowId, active)
+      const items: Span[] = withDraft ? [...others, active] : others
+      const capacity = capacityOf(rowId)
+      const spans = items.length > capacity ? overloadSpans(items, capacity) : []
+      if (spans.length || overloads.value.has(rowId)) map.set(rowId, spans)
+    }
+    return map.size ? map : NO_SPANS
+  })
+
   const linkList = computed<readonly GanttLink[]>(() => toValue(options.links) ?? [])
+  const linkIndex = computed(() => indexLinks(linkList.value))
   const linksByItem = computed(() => {
     const map = new Map<string, GanttLink[]>()
     const add = (key: string, link: GanttLink) => {
@@ -277,7 +450,22 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   const timeToX = (ms: number) => (ms - origin.value) / msPerPx.value
   const xToTime = (x: number) => origin.value + x * msPerPx.value
   const totalWidth = computed(() => Math.ceil((bounds.value.end - bounds.value.start) / msPerPx.value))
-  const totalHeight = computed(() => flatRows.value.length * rowHeight.value)
+  /** Top of every visible row, plus the total height as the last entry. */
+  const rowOffsets = computed(() => {
+    const rows = flatRows.value
+    const offsets = new Float64Array(rows.length + 1)
+    const base = rowHeight.value
+    const pitch = lanePitch.value
+    const committed = committedLanes.value
+    const drafts = draftLanes.value
+    const stacked = committed.size > 0 || drafts.size > 0
+    for (let i = 0; i < rows.length; i++) {
+      const layout = stacked ? (drafts.get(rows[i]!.id) ?? committed.get(rows[i]!.id)) : undefined
+      offsets[i + 1] = offsets[i]! + base + (layout ? (layout.count - 1) * pitch : 0)
+    }
+    return offsets
+  })
+  const totalHeight = computed(() => rowOffsets.value[flatRows.value.length]!)
 
   // Viewport
 
@@ -326,7 +514,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   const timelineWidth = computed(() => Math.max(0, viewportWidth.value - sidebarWidth.value))
 
   const rowWindow = computed((previous: { start: number; end: number } | undefined) => {
-    const next = chunkedRange(scrollTop.value, bodyHeight.value, rowHeight.value, flatRows.value.length, ROW_CHUNK)
+    const next = chunkedRowRange(rowOffsets.value, scrollTop.value, bodyHeight.value, ROW_CHUNK)
     return sameRange(previous, next) ? previous! : next
   })
 
@@ -336,17 +524,37 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   })
 
   /** Box of the rendered window in timeline coordinates, for layers like grid lines and links. */
-  const windowRect = computed<Rect>(() => ({
-    x: xWindow.value.start,
-    y: rowWindow.value.start * rowHeight.value,
-    width: xWindow.value.end - xWindow.value.start,
-    height: (rowWindow.value.end - rowWindow.value.start) * rowHeight.value,
-  }))
+  const windowRect = computed<Rect>(() => {
+    const offsets = rowOffsets.value
+    const y = offsets[rowWindow.value.start] ?? 0
+    return {
+      x: xWindow.value.start,
+      y,
+      width: xWindow.value.end - xWindow.value.start,
+      height: (offsets[rowWindow.value.end] ?? y) - y,
+    }
+  })
 
   const visibleRows = computed<GanttRowState<R>[]>(() => {
     const { start, end } = rowWindow.value
-    const height = rowHeight.value
-    return flatRows.value.slice(start, end).map((row) => ({ ...row, top: row.index * height }))
+    const offsets = rowOffsets.value
+    const committed = overloads.value
+    const drafts = draftOverloads.value
+    return flatRows.value.slice(start, end).map((row) => {
+      const spans = drafts.get(row.id) ?? committed.get(row.id)
+      return {
+        ...row,
+        top: offsets[row.index]!,
+        height: offsets[row.index + 1]! - offsets[row.index]!,
+        lanes: laneLayout(row.id)?.count ?? 1,
+        overloads: spans
+          ? spans.map((span) => {
+              const x = timeToX(span.start)
+              return { ...span, x, width: timeToX(span.end) - x }
+            })
+          : [],
+      }
+    })
   })
 
   const ticks = computed<{ top: Tick[]; bottom: Tick[] }>(() => {
@@ -380,11 +588,9 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
 
   // Bars
 
-  const draft = shallowRef<Draft | null>(null)
-
-  function rectFor(start: number, end: number, rowIndex: number): Rect & { milestone: boolean } {
+  function rectFor(start: number, end: number, rowIndex: number, lane = 0): Rect & { milestone: boolean } {
     const height = rowHeight.value - barInset.value * 2
-    const y = rowIndex * rowHeight.value + barInset.value
+    const y = rowOffsets.value[rowIndex]! + barInset.value + lane * lanePitch.value
     if (end <= start) {
       return { x: timeToX(start) - height / 2, y, width: height, height, milestone: true }
     }
@@ -396,21 +602,38 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     return options.isItemEditable ? options.isItemEditable(item) : true
   }
 
-  /** Current span and rect of an item, draft included. `null` if its row is hidden. */
+  /** Current span and rect of an item, drag preview included. `null` if its row is hidden. */
   function itemGeometry(id: string) {
     const normalized = itemIndex.value.byId.get(id)
     if (!normalized) return null
-    const rowIndex = rowIndexById.value.get(normalized.rowId)
+    const rowId = draft.value?.id === id ? draft.value.rowId : normalized.rowId
+    const rowIndex = rowIndexById.value.get(rowId)
     if (rowIndex === undefined) return null
-    const current = draft.value?.id === id ? draft.value : normalized
-    return {
-      normalized,
-      rowIndex,
-      start: current.start,
-      end: current.end,
-      rect: rectFor(current.start, current.end, rowIndex),
-    }
+    const span = spanOf(normalized)
+    const lane = laneLayout(rowId)?.lanes.get(id) ?? 0
+    return { normalized, rowId, rowIndex, lane, start: span.start, end: span.end, rect: rectFor(span.start, span.end, rowIndex, lane) }
   }
+
+  /** Same bar in the same place and state: reusing the object lets Vue skip re-rendering it. */
+  function sameBar(a: GanttBarState<I>, b: GanttBarState<I>) {
+    return (
+      a.item === b.item &&
+      a.x === b.x &&
+      a.y === b.y &&
+      a.width === b.width &&
+      a.height === b.height &&
+      a.rowId === b.rowId &&
+      a.rowIndex === b.rowIndex &&
+      a.lane === b.lane &&
+      a.room === b.room &&
+      a.start === b.start &&
+      a.end === b.end &&
+      a.dragging === b.dragging &&
+      a.editable === b.editable
+    )
+  }
+
+  let previousBars = new Map<string, GanttBarState<I>>()
 
   const visibleBars = computed<GanttBarState<I>[]>(() => {
     const { start, end } = rowWindow.value
@@ -419,29 +642,59 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     const rows = flatRows.value
     const byRow = itemIndex.value.byRow
     const active = draft.value
+    const moving = active ? itemIndex.value.byId.get(active.id) : undefined
+    const movedAway = !!moving && active!.fromRowId !== active!.rowId
     const bars: GanttBarState<I>[] = []
-    for (let i = start; i < end; i++) {
-      const items = byRow.get(rows[i]!.id)
-      if (!items) continue
-      for (const normalized of items) {
-        const span = active?.id === normalized.id ? active : normalized
-        if (span.end < from || span.start > to) continue
-        const rect = rectFor(span.start, span.end, i)
-        bars.push({
-          ...rect,
-          id: normalized.id,
-          item: normalized.item,
-          rowId: normalized.rowId,
-          rowIndex: i,
-          start: span.start,
-          end: span.end,
-          dragging: active?.id === normalized.id,
-          editable: canEditItem(normalized.item),
-        })
-      }
+    const push = (normalized: NormalizedItem<I>, rowIndex: number, rowId: string) => {
+      const span = spanOf(normalized)
+      if (span.end < from || span.start > to) return
+      const lane = laneLayout(rowId)?.lanes.get(normalized.id) ?? 0
+      bars.push({
+        ...rectFor(span.start, span.end, rowIndex, lane),
+        id: normalized.id,
+        item: normalized.item,
+        rowId,
+        rowIndex,
+        lane,
+        room: Infinity,
+        start: span.start,
+        end: span.end,
+        dragging: active?.id === normalized.id,
+        editable: canEditItem(normalized.item),
+      })
     }
+    for (let i = start; i < end; i++) {
+      const rowId = rows[i]!.id
+      const first = bars.length
+      for (const normalized of byRow.get(rowId) ?? []) {
+        if (movedAway && normalized.id === active!.id) continue
+        push(normalized, i, rowId)
+      }
+      if (movedAway && rowId === active!.rowId) push(moving!, i, rowId)
+      if (bars.length - first > 1) measureRoom(bars, first)
+    }
+    const next = new Map<string, GanttBarState<I>>()
+    for (let i = 0; i < bars.length; i++) {
+      const previous = previousBars.get(bars[i]!.id)
+      if (previous && sameBar(previous, bars[i]!)) bars[i] = previous
+      next.set(bars[i]!.id, bars[i]!)
+    }
+    previousBars = next
     return bars
   })
+
+  /** Sets `room` for the bars of one row, `bars[first..]`. */
+  function measureRoom(bars: GanttBarState<I>[], first: number) {
+    const row = bars.slice(first).sort((a, b) => a.x - b.x)
+    const next = new Map<number, number>()
+    for (let i = row.length - 1; i >= 0; i--) {
+      const bar = row[i]!
+      const right = bar.x + bar.width
+      const following = next.get(bar.lane)
+      if (following !== undefined) bar.room = Math.max(0, following - right)
+      next.set(bar.lane, bar.x)
+    }
+  }
 
   // Links
 
@@ -567,16 +820,58 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     stopInteraction = cleanup
   }
 
-  function commit(normalized: NormalizedItem<I>, start: number, end: number) {
-    if (start === normalized.start && end === normalized.end) return
-    const tz = timeZone.value
-    options.onItemChange?.({
-      item: normalized.item,
-      start: formatLike(normalized.item.start, start, tz),
-      end: formatLike(normalized.item.end, end, tz),
-      startMs: start,
-      endMs: end,
+  /** What `autoShift` would do to the successors if `id` had `span`. */
+  function previewShifts(id: string, span: Span): ReadonlyMap<string, Span> | null {
+    if (!autoShift.value || !linkIndex.value.outgoing.has(id)) return null
+    const byId = itemIndex.value.byId
+    const shifted = shiftSuccessors(id, linkIndex.value, {
+      spanOf: (other) => (other === id ? span : byId.get(other)),
+      canShift: (other) => {
+        const item = byId.get(other)
+        return !!item && canEditItem(item.item) && editable.value.move
+      },
+      calendar: snapper.value.unit === 'day' ? calendar.value : null,
     })
+    return shifted.size ? shifted : null
+  }
+
+  /** Reports an edit, plus the successors `autoShift` moved because of it. */
+  function commit(normalized: NormalizedItem<I>, span: Span, rowId?: string, rowKey?: Id) {
+    const tz = timeZone.value
+    const timeChanged = span.start !== normalized.start || span.end !== normalized.end
+    const rowChanged = rowId !== undefined && rowId !== normalized.rowId
+    if (!timeChanged && !rowChanged) return
+    const toChange = (target: NormalizedItem<I>, next: Span, source: ItemChange<I>['source']): ItemChange<I> => ({
+      item: target.item,
+      start: formatLike(target.item.start, next.start, tz),
+      end: formatLike(target.item.end, next.end, tz),
+      startMs: next.start,
+      endMs: next.end,
+      source,
+    })
+    const edit = toChange(normalized, span, 'edit')
+    if (rowChanged) {
+      const row = flatRows.value[rowIndexById.value.get(rowId)!]
+      edit.rowId = rowKey ?? (row ? getRowId(row.row) : rowId)
+    }
+    const changes = [edit]
+    if (timeChanged) {
+      for (const [id, next] of previewShifts(normalized.id, span) ?? []) {
+        changes.push(toChange(itemIndex.value.byId.get(id)!, next, 'auto-shift'))
+      }
+    }
+    for (const change of changes) options.onItemChange?.(change)
+    options.onItemsChange?.(changes)
+  }
+
+  /** Row under `y` the item may move to, or `null`. */
+  function targetRowAt(y: number, item: I): string | null {
+    const rows = flatRows.value
+    const index = rowIndexAt(rowOffsets.value, y)
+    const row = rows[index]
+    if (!row) return null
+    if (options.canMoveToRow && !options.canMoveToRow(item, row.row)) return null
+    return row.id
   }
 
   /** Call from `pointerdown` on a bar (`move`) or on its edge handles. */
@@ -588,21 +883,35 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     event.stopPropagation()
 
     const grabTime = xToTime(pointerToTimeline(event.clientX, event.clientY).x)
+    const reassign = mode === 'move' && canReassign.value
+    let rowId = normalized.rowId
     let moved = false
 
     track(event, {
+      vertical: reassign,
       onMove: ({ clientX, clientY }) => {
-        if (!moved && Math.abs(clientX - event.clientX) < DRAG_THRESHOLD) return
+        if (
+          !moved &&
+          Math.abs(clientX - event.clientX) < DRAG_THRESHOLD &&
+          (!reassign || Math.abs(clientY - event.clientY) < DRAG_THRESHOLD)
+        ) {
+          return
+        }
         moved = true
-        const delta = xToTime(pointerToTimeline(clientX, clientY).x) - grabTime
-        draft.value = { id: normalized.id, mode, ...applyDrag(normalized, mode, delta, snapper.value, calendar.value) }
+        const point = pointerToTimeline(clientX, clientY)
+        // Over a row the item may not go to, it stays in the last allowed one.
+        if (reassign) rowId = targetRowAt(point.y, normalized.item) ?? rowId
+        const span = applyDrag(normalized, mode, xToTime(point.x) - grabTime, snapper.value, calendar.value)
+        draft.value = { id: normalized.id, fromRowId: normalized.rowId, rowId, mode, ...span }
+        shiftDraft.value = previewShifts(normalized.id, span)
       },
       onEnd: (e) => {
         const result = draft.value
         draft.value = null
+        shiftDraft.value = null
         if (!moved) return
         suppressNextClick()
-        if (e && result) commit(normalized, result.start, result.end)
+        if (e && result) commit(normalized, result, result.rowId)
       },
     })
   }
@@ -613,7 +922,61 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     if (!normalized || !canEditItem(normalized.item)) return
     if (!(mode === 'move' ? editable.value.move : editable.value.resize)) return
     const span = nudgeSpan(normalized, mode, steps, snapper.value, calendar.value)
-    commit(normalized, span.start, span.end)
+    commit(normalized, span)
+  }
+
+  function canMoveTo(item: I, row: R) {
+    return !options.canMoveToRow || options.canMoveToRow(item, row)
+  }
+
+  /** Keyboard reassignment: moves an item to the nearest allowed row above (-1) or below (1). */
+  function moveToRow(id: Id, direction: 1 | -1) {
+    const normalized = itemIndex.value.byId.get(String(id))
+    if (!normalized || !canReassign.value || !canEditItem(normalized.item)) return
+    const rows = flatRows.value
+    const from = rowIndexById.value.get(normalized.rowId)
+    if (from === undefined) return
+    for (let i = from + direction; i >= 0 && i < rows.length; i += direction) {
+      const row = rows[i]!
+      if (!canMoveTo(normalized.item, row.row)) continue
+      commit(normalized, normalized, row.id)
+      return
+    }
+  }
+
+  /** Moves an item to any row, collapsed ones included, e.g. from a "Move to" menu. */
+  function moveItemToRow(id: Id, rowId: Id) {
+    const normalized = itemIndex.value.byId.get(String(id))
+    if (!normalized || !canReassign.value || !canEditItem(normalized.item)) return
+    const target = String(rowId)
+    const row = toValue(options.rows).find((candidate) => String(getRowId(candidate)) === target)
+    if (!row || !canMoveTo(normalized.item, row)) return
+    commit(normalized, normalized, target, getRowId(row))
+  }
+
+  /**
+   * Rows an item can be moved to, in tree order, collapsed ones included, its own row left out.
+   * `busy` tells which of them already run at full capacity during the item's time.
+   */
+  function moveTargets(id: Id): MoveTarget<R>[] {
+    const normalized = itemIndex.value.byId.get(String(id))
+    if (!normalized || !canReassign.value || !canEditItem(normalized.item)) return []
+    const rows = toValue(options.rows)
+    const byId = new Map<string, R>()
+    for (const row of rows) byId.set(String(getRowId(row)), row)
+    const span = { start: normalized.start, end: Math.max(normalized.end, normalized.start + 1) }
+    const targets: MoveTarget<R>[] = []
+    for (const flat of flattenRows(rows, getRowId, getParentId, new Set())) {
+      if (flat.id === normalized.rowId || !canMoveTo(normalized.item, flat.row)) continue
+      const overlapping = (itemIndex.value.byRow.get(flat.id) ?? []).filter(
+        (other) => other.start < span.end && span.start < Math.max(other.end, other.start + 1),
+      )
+      const capacity = capacityOf(flat.id)
+      const busy = overlapping.length >= capacity && overloadSpans([...overlapping, normalized], capacity).length > 0
+      const parentId = getParentId(flat.row)
+      targets.push({ id: flat.id, row: flat.row, parent: parentId == null ? null : (byId.get(String(parentId)) ?? null), busy })
+    }
+    return targets
   }
 
   const linkDraft = shallowRef<{ fromId: string; side: LinkSide; x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -724,6 +1087,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     sidebarWidth,
     headerHeight,
     editable,
+    canReassign,
     calendar,
     // layout
     bounds,
@@ -742,16 +1106,23 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     visibleLinks,
     ticks,
     nonWorkingDays,
+    overloads,
     draft,
+    shiftDraft,
     linkDraft,
     collapsed,
     // actions
+    allExpanded,
+    hasNestedRows,
     toggleRow,
     expandAll,
     collapseAll,
     startDrag,
     startLink,
     nudge,
+    moveToRow,
+    moveItemToRow,
+    moveTargets,
     setZoom,
     zoomIn,
     zoomOut,
