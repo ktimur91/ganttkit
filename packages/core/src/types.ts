@@ -47,6 +47,13 @@ export interface Span {
   end: number
 }
 
+/** A day off in the rendered window, in timeline coordinates. */
+export interface NonWorkingDay {
+  key: number
+  x: number
+  width: number
+}
+
 export interface Rect {
   x: number
   y: number
@@ -64,4 +71,6 @@ export interface Tick {
   label: string
   sublabel?: string
   weekend?: boolean
+  /** Day off by the working calendar, or a weekend when there is none. Day ticks only. */
+  nonWorking?: boolean
 }

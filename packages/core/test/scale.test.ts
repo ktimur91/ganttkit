@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ZOOM_LEVELS, ZOOM_PRESETS, buildTicks } from '../src/scale'
+import { createCalendar } from '../src/calendar'
 import { HOUR, toMs } from '../src/time'
 
 function context(timeZone: string, origin: number, msPerPx = HOUR) {
@@ -16,6 +17,17 @@ describe('buildTicks', () => {
     expect(ticks[0]).toMatchObject({ x: 0, width: 24, label: '2', sublabel: 'M', weekend: false })
     expect(ticks[6]).toMatchObject({ x: 144, label: '8', weekend: true })
     expect(ticks.filter((t) => t.weekend)).toHaveLength(2)
+  })
+
+  it('marks days off from the calendar, weekends without one', () => {
+    const tz = 'UTC'
+    const from = toMs('2026-11-05', tz)
+    const to = toMs('2026-11-10', tz)
+    const plain = buildTicks(from, to, 'day', 'bottom', context(tz, from))
+    expect(plain.map((t) => t.nonWorking)).toEqual([false, false, true, true, false])
+    const calendar = createCalendar({ holidays: ['2026-11-06'], workingDates: ['2026-11-07'] }, tz)
+    const custom = buildTicks(from, to, 'day', 'bottom', { ...context(tz, from), calendar })
+    expect(custom.map((t) => t.nonWorking)).toEqual([false, true, false, true, false])
   })
 
   it('starts from the unit containing `from`, so the first tick may begin before it', () => {

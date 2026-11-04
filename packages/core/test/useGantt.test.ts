@@ -106,6 +106,15 @@ describe('useGantt', () => {
     expect(changes[0]!.start).toBe('2026-11-09')
   })
 
+  it('edits in working days with a calendar', () => {
+    // t1 runs Mon Nov 2 to Wed Nov 4: three working days.
+    const { gantt, changes } = setup(tasks, { calendar: { holidays: ['2026-11-06'] } })
+    gantt.nudge('t1', 'move', 3)
+    // Thu Nov 5, then Fri is a holiday and the weekend is off: Mon and Tue.
+    expect([changes[0]!.start, changes[0]!.end]).toEqual(['2026-11-05', '2026-11-11'])
+    expect(gantt.calendar.value?.countWorkingDays(changes[0]!.startMs, changes[0]!.endMs)).toBe(3)
+  })
+
   it('reacts to new rows', async () => {
     const { gantt, rows } = setup(tasks)
     rows.value = [...tasks, { id: 'later', name: 'Later', start: '2027-03-01', end: '2027-03-02' }]

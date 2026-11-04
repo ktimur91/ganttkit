@@ -14,7 +14,7 @@ export const MINUTE = 60_000
 export const HOUR = 3_600_000
 export const DAY = 86_400_000
 
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+export const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 const HAS_OFFSET = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i
 
 export function localTimeZone(): string {

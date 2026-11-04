@@ -9,6 +9,7 @@ import {
   toValue,
   watch,
 } from 'vue'
+import { type WorkingCalendar, createCalendar } from './calendar'
 import { type Snapper, applyDrag, createSnapper, nudgeSpan } from './drag'
 import { type FlatRow, chunkedRange, flattenRows, sameRange } from './layout'
 import { isLinkViolated, linkPath, linkTypeFromSides, wouldCreateCycle } from './links'
@@ -23,6 +24,7 @@ import type {
   Id,
   LinkSide,
   LinkType,
+  NonWorkingDay,
   Rect,
   SnapUnit,
   Tick,
@@ -77,6 +79,11 @@ export interface UseGanttOptions<R extends GanttRowBase, I extends GanttItemBase
    * Defaults to now, `null` keeps the scroll at the start.
    */
   initialDate?: MaybeRefOrGetter<DateInput | null | undefined>
+  /**
+   * Working days and holidays. With day snapping, drag and keyboard edits keep task lengths in
+   * working days and skip days off. Without it, weekends are only shaded.
+   */
+  calendar?: MaybeRefOrGetter<WorkingCalendar | undefined>
   /** Snap step while dragging. Defaults to the zoom level's step. */
   snap?: MaybeRefOrGetter<SnapUnit | undefined>
   onItemChange?: (change: ItemChange<I>) => void
@@ -148,6 +155,12 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   const headerHeight = computed(() => toValue(options.headerHeight) ?? 56)
   const weekStartsOn = options.weekStartsOn ?? 1
   const editable = computed(() => normalizeEditable(toValue(options.editable)))
+  const calendar = computed(() => {
+    const rules = toValue(options.calendar)
+    return rules ? createCalendar(rules, timeZone.value) : null
+  })
+  // Shading falls back to plain weekends when no calendar is given.
+  const shadingCalendar = computed(() => calendar.value ?? createCalendar({}, timeZone.value))
   const snapper = computed<Snapper>(() =>
     createSnapper(toValue(options.snap) ?? preset.value.snap, timeZone.value, weekStartsOn),
   )
@@ -340,11 +353,29 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     const from = Math.max(bounds.value.start, xToTime(xWindow.value.start))
     const to = Math.min(bounds.value.end, xToTime(xWindow.value.end))
     if (to <= from) return { top: [], bottom: [] }
-    const ctx = { timeZone: timeZone.value, locale: locale.value, weekStartsOn, timeToX }
+    const ctx = { timeZone: timeZone.value, locale: locale.value, weekStartsOn, timeToX, calendar: calendar.value }
     return {
       top: buildTicks(from, to, preset.value.top, 'top', ctx),
       bottom: buildTicks(from, to, preset.value.bottom, 'bottom', ctx),
     }
+  })
+
+  /** Days off in the rendered window. Empty when a day is narrower than 10px, stripes would only be noise. */
+  const nonWorkingDays = computed<NonWorkingDay[]>(() => {
+    if (DAY / msPerPx.value < 10) return []
+    const tz = timeZone.value
+    const from = Math.max(bounds.value.start, xToTime(xWindow.value.start))
+    const to = Math.min(bounds.value.end, xToTime(xWindow.value.end))
+    const days: NonWorkingDay[] = []
+    for (let day = floorTo(from, 'day', tz); day < to; ) {
+      const next = addUnits(day, 'day', 1, tz)
+      if (!shadingCalendar.value.isWorkingDay(day)) {
+        const x = timeToX(day)
+        days.push({ key: day, x, width: timeToX(next) - x })
+      }
+      day = next
+    }
+    return days
   })
 
   // Bars
@@ -564,7 +595,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
         if (!moved && Math.abs(clientX - event.clientX) < DRAG_THRESHOLD) return
         moved = true
         const delta = xToTime(pointerToTimeline(clientX, clientY).x) - grabTime
-        draft.value = { id: normalized.id, mode, ...applyDrag(normalized, mode, delta, snapper.value) }
+        draft.value = { id: normalized.id, mode, ...applyDrag(normalized, mode, delta, snapper.value, calendar.value) }
       },
       onEnd: (e) => {
         const result = draft.value
@@ -581,7 +612,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     const normalized = itemIndex.value.byId.get(String(id))
     if (!normalized || !canEditItem(normalized.item)) return
     if (!(mode === 'move' ? editable.value.move : editable.value.resize)) return
-    const span = nudgeSpan(normalized, mode, steps, snapper.value)
+    const span = nudgeSpan(normalized, mode, steps, snapper.value, calendar.value)
     commit(normalized, span.start, span.end)
   }
 
@@ -693,6 +724,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     sidebarWidth,
     headerHeight,
     editable,
+    calendar,
     // layout
     bounds,
     totalWidth,
@@ -709,6 +741,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     visibleBars,
     visibleLinks,
     ticks,
+    nonWorkingDays,
     draft,
     linkDraft,
     collapsed,

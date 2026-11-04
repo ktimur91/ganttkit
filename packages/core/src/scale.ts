@@ -1,4 +1,5 @@
 import { fromAbsolute } from '@internationalized/date'
+import type { Calendar } from './calendar'
 import { DAY, HOUR, addUnits, floorTo, getFormatter, isWeekend } from './time'
 import type { SnapUnit, Tick, TimeUnit, ZoomLevel } from './types'
 
@@ -24,6 +25,8 @@ export interface TickContext {
   locale?: string
   weekStartsOn: number
   timeToX: (ms: number) => number
+  /** Marks day ticks that are days off. Without it, weekends are. */
+  calendar?: Calendar | null
 }
 
 const MAX_TICKS = 5000
@@ -52,6 +55,7 @@ export function buildTicks(
     }
     if (unit === 'day') {
       tick.weekend = isWeekend(start, ctx.timeZone)
+      tick.nonWorking = ctx.calendar ? !ctx.calendar.isWorkingDay(start) : tick.weekend
       if (role === 'bottom') {
         tick.sublabel = getFormatter(ctx.locale, ctx.timeZone, { weekday: 'narrow' }).format(start)
       }
