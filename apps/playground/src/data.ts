@@ -109,3 +109,64 @@ export function summarize(rows: readonly DemoRow[], tasks: readonly DemoTask[]):
   }
   return summaries
 }
+
+export interface DemoPerson {
+  id: string
+  parentId?: string
+  name: string
+}
+
+export interface DemoBooking {
+  id: string
+  rowId: string
+  name: string
+  start: string
+  end: string
+}
+
+const TEAMS = ['Design', 'Frontend', 'Backend', 'QA', 'DevOps', 'Support']
+const PEOPLE = [
+  'Alex', 'Maria', 'Daniel', 'Aigerim', 'Sofia', 'Omar', 'Lena', 'Chen', 'Priya', 'Lucas',
+  'Emma', 'Arman', 'Yuki', 'Noah', 'Dana', 'Ivan', 'Fatima', 'Leo', 'Nora', 'Samir',
+]
+const PEOPLE_PER_TEAM = 8
+
+/** Teams with people and their bookings around today. About one person in four is double-booked somewhere. */
+export function generateResources(rowCount: number, seed = 11) {
+  const random = mulberry32(seed)
+  const now = new Date()
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const weekday = (ms: number) => {
+    const day = new Date(ms).getUTCDay()
+    return day === 6 ? ms + 2 * DAY : day === 0 ? ms + DAY : ms
+  }
+  const rows: DemoPerson[] = []
+  const bookings: DemoBooking[] = []
+
+  for (let t = 0; rows.length < rowCount; t++) {
+    const team = `team${t}`
+    rows.push({ id: team, name: `${TEAMS[t % TEAMS.length]} ${Math.floor(t / TEAMS.length) + 1}` })
+    for (let p = 0; p < PEOPLE_PER_TEAM && rows.length < rowCount; p++) {
+      const person = `${team}p${p}`
+      rows.push({ id: person, parentId: team, name: PEOPLE[(t * PEOPLE_PER_TEAM + p) % PEOPLE.length]! })
+      let cursor = today - Math.floor(20 + random() * 20) * DAY
+      for (let b = 0; cursor < today + 90 * DAY; b++) {
+        // Now and then a booking starts before the previous one ends: a double booking.
+        const overlap = b > 0 && random() < 0.02
+        // Gaps between bookings, now and then a week or two, so someone is free to take over.
+        const gap = Math.floor(random() * random() * 14)
+        const start = weekday(overlap ? cursor - (1 + Math.floor(random() * 3)) * DAY : cursor + gap * DAY)
+        const end = start + (2 + Math.floor(random() * 9)) * DAY
+        bookings.push({ id: `${person}b${b}`, rowId: person, name: PROJECTS[Math.floor(random() * PROJECTS.length)]!, start: isoDay(start), end: isoDay(end) })
+        cursor = Math.max(cursor, end)
+      }
+    }
+  }
+  // The first person is double-booked right now, so the overload is on screen at once.
+  const first = rows[1]
+  if (first) {
+    const start = weekday(today - DAY)
+    bookings.push({ id: 'hotfix', rowId: first.id, name: 'Hotfix', start: isoDay(start), end: isoDay(start + 3 * DAY) })
+  }
+  return { rows, bookings }
+}

@@ -188,3 +188,148 @@ test.describe('phones', () => {
     expect(layout.sidebar).toBe(160)
   })
 })
+
+test.describe('resources', () => {
+  /** Box of a person's row in the sidebar. */
+  const personRow = (page: Page, name: string) =>
+    page.locator('.sticky.left-0.z-20 > div').filter({ hasText: new RegExp(`^${name}$`) }).first()
+
+  /** A booking of `name` fully in view, as a locator by id. */
+  async function bookingOf(page: Page, name: string) {
+    const row = await box(personRow(page, name))
+    const bars = await visibleEditableBars(page)
+    for (const bar of bars) {
+      const rect = await box(bar)
+      if (rect.y > row.y && rect.y < row.y + row.height && rect.width >= 40) return bar
+    }
+    throw new Error(`no booking of ${name} in view`)
+  }
+
+  test('marks double bookings', async ({ page }) => {
+    const errors = await open(page, '?view=resources')
+    await expect(chart(page).locator('[data-gantt-overload]').first()).toBeAttached()
+    await expect(page.getByRole('img', { name: 'Overloaded' }).first()).toBeVisible()
+    await expect(page.locator('footer')).toContainText(/\d+ people double-booked/)
+    expect(errors).toEqual([])
+  })
+
+  test('Alt + Down gives a booking to the next person and keeps focus', async ({ page }) => {
+    await open(page, '?view=resources')
+    const bar = await bookingOf(page, 'Alex')
+    await bar.focus()
+    await page.keyboard.press('Alt+ArrowDown')
+    const maria = await box(personRow(page, 'Maria'))
+    await expect.poll(async () => {
+      const rect = await box(bar)
+      return rect.y > maria.y && rect.y < maria.y + maria.height
+    }).toBe(true)
+    await expect(bar).toBeFocused()
+  })
+
+  test.describe('pointer', () => {
+    test.skip(({ isMobile }) => isMobile, 'mouse drag')
+
+    test('dragging a booking down gives it to another person', async ({ page }) => {
+      await open(page, '?view=resources')
+      const bar = await bookingOf(page, 'Alex')
+      const from = await box(bar)
+      const x = from.x + 10
+      let y = from.y + from.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      // Rows the booking passes grow to preview it, so aim at where Daniel's row is now, step by step.
+      for (let step = 0; step < 30; step++) {
+        const target = await box(personRow(page, 'Daniel'))
+        if (y > target.y + 4 && y < target.y + target.height - 4) break
+        y += Math.sign(target.y + 18 - y) * 8
+        await page.mouse.move(x, y)
+      }
+      await expect(page.locator('[data-slot="gantt-tooltip"]')).toContainText('Moves to Daniel')
+      await page.mouse.up()
+      await expect.poll(async () => {
+        const rect = await box(bar)
+        const row = await box(personRow(page, 'Daniel'))
+        return rect.y > row.y && rect.y < row.y + row.height && Math.round(rect.x) === Math.round(from.x)
+      }).toBe(true)
+    })
+
+    test('the right-click menu moves a booking to a free person', async ({ page }) => {
+      await open(page, '?view=resources')
+      const bar = await bookingOf(page, 'Alex')
+      const from = await box(bar)
+      await bar.click({ button: 'right', position: { x: 10, y: from.height / 2 } })
+      const menu = page.locator('[data-slot="gantt-menu"]')
+      await expect(menu).toBeVisible()
+      await expect(menu.getByRole('combobox')).toBeFocused()
+      // Free people come first.
+      const first = menu.getByRole('option').first()
+      await expect(first).not.toContainText('Busy')
+      const name = (await first.locator('span').first().innerText()).trim()
+      await first.click()
+      await expect(menu).toBeHidden()
+      await expect(bar).toBeFocused()
+      // The booking left Alex: it is no longer at its old place.
+      await expect.poll(async () => Math.round((await box(bar)).y) !== Math.round(from.y)).toBe(true)
+      expect(name).not.toBe('Alex')
+    })
+
+    test('the menu filters people as you type and closes on Escape', async ({ page }) => {
+      await open(page, '?view=resources')
+      const bar = await bookingOf(page, 'Alex')
+      await bar.click({ button: 'right' })
+      await page.keyboard.type('omar')
+      const options = page.locator('[data-slot="gantt-menu"] [role="option"]')
+      await expect(options.first()).toContainText('Omar')
+      for (const text of await options.allInnerTexts()) expect(text.toLowerCase()).toContain('omar')
+      await page.keyboard.press('Escape')
+      await expect(page.locator('[data-slot="gantt-menu"]')).toBeHidden()
+      await expect(bar).toBeFocused()
+    })
+
+    test('hovering a bar shows its dates', async ({ page }) => {
+      await open(page, '?view=resources')
+      const bar = await bookingOf(page, 'Alex')
+      await bar.hover()
+      await expect(page.locator('[data-slot="gantt-tooltip"]')).toContainText(/working days?/)
+    })
+  })
+})
+
+test('the header button collapses and expands all rows', async ({ page }) => {
+  await open(page, '?view=resources')
+  const rows = page.locator('.sticky.left-0.z-20 > div')
+  const before = await rows.count()
+  await page.getByRole('button', { name: 'Collapse all' }).click()
+  await expect(page.getByRole('img', { name: 'Overloaded' })).toHaveCount(0)
+  await expect.poll(() => rows.count()).toBeLessThan(before)
+  await expect(rows.first()).toContainText('Design 1')
+  await page.getByRole('button', { name: 'Expand all' }).click()
+  await expect(page.getByRole('button', { name: 'Collapse all' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Overloaded' }).first()).toBeVisible()
+})
+
+test.describe('auto-shift', () => {
+  test.skip(({ isMobile }) => isMobile, 'the linked tasks are off screen on phones')
+
+  async function resizeAndMeasure(page: Page) {
+    const successor = page.locator('[data-gantt-item="p0t5"]')
+    const before = (await box(successor)).x
+    const task = page.locator('[data-gantt-item="p0t4"]')
+    await task.focus()
+    for (let i = 0; i < 10; i++) await page.keyboard.press('Shift+ArrowRight')
+    // Wait until the edit has landed, then measure the successor.
+    await expect.poll(async () => Math.round((await box(task)).width)).toBeGreaterThan(10 * DAY_PX)
+    return (await box(successor)).x - before
+  }
+
+  test('pushes linked tasks forward when a task grows past them', async ({ page }) => {
+    await open(page)
+    expect(await resizeAndMeasure(page)).toBeGreaterThan(0)
+  })
+
+  test('leaves them alone when turned off', async ({ page }) => {
+    await open(page)
+    await page.getByRole('button', { name: 'Auto-shift' }).click()
+    expect(await resizeAndMeasure(page)).toBe(0)
+  })
+})
