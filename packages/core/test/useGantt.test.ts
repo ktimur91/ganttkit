@@ -277,4 +277,49 @@ describe('useGantt', () => {
       expect(changes.map((c) => c.item.id)).toEqual(['a'])
     })
   })
+
+  describe('zoom', () => {
+    /** A stand-in for the scroll container: 1280 px wide, scroll events on demand. */
+    function viewport() {
+      const listeners: (() => void)[] = []
+      const el = {
+        scrollLeft: 0,
+        scrollTop: 0,
+        clientWidth: 1280,
+        clientHeight: 600,
+        addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+        removeEventListener: () => {},
+        scroll: () => listeners.forEach((listener) => listener()),
+      }
+      return el
+    }
+
+    async function zoomed(change: (gantt: ReturnType<typeof setup>['gantt'], zoom: ReturnType<typeof ref<ZoomLevel>>) => void) {
+      globalThis.ResizeObserver ??= class { observe() {} disconnect() {} } as unknown as typeof ResizeObserver
+      const zoom = ref<ZoomLevel>('week')
+      const { gantt } = setup(tasks, { zoom, initialDate: null })
+      const el = viewport()
+      gantt.viewportEl.value = el as unknown as HTMLElement
+      await nextTick()
+      el.scrollLeft = 400
+      el.scroll()
+      const center = () => gantt.xToTime(el.scrollLeft + (1280 - 280) / 2)
+      const before = center()
+      change(gantt, zoom)
+      await nextTick()
+      await nextTick()
+      el.scroll()
+      return { before, after: center(), msPerPx: gantt.msPerPx.value }
+    }
+
+    it('keeps the date in the middle when the zoom ref changes from outside', async () => {
+      const { before, after, msPerPx } = await zoomed((_, zoom) => (zoom.value = 'month'))
+      expect(Math.abs(after - before)).toBeLessThanOrEqual(msPerPx)
+    })
+
+    it('keeps it with setZoom too', async () => {
+      const { before, after, msPerPx } = await zoomed((gantt) => gantt.setZoom('day'))
+      expect(Math.abs(after - before)).toBeLessThanOrEqual(msPerPx)
+    })
+  })
 })

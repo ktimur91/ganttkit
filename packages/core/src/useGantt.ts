@@ -500,13 +500,20 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     { immediate: true },
   )
 
-  // Keep the view still when the range grows to the left after an edit.
+  // Where the view stays put on the next zoom change, px from the timeline's left edge. `setZoom` sets it,
+  // any other change of `zoom` (a v-model bound to a select, say) keeps the center.
+  let zoomAnchor: number | null = null
+
+  // Keep the view still when the zoom changes, and when the range grows to the left after an edit.
+  // This runs before the DOM updates, so `scrollLeft` still belongs to the old scale.
   watch([origin, msPerPx], ([newOrigin, newMsPerPx], [oldOrigin, oldMsPerPx]) => {
     const el = viewportEl.value
-    if (!el || newMsPerPx !== oldMsPerPx || newOrigin === oldOrigin) return
-    const shift = (oldOrigin - newOrigin) / newMsPerPx
+    const anchor = zoomAnchor ?? timelineWidth.value / 2
+    zoomAnchor = null
+    if (!el || (newMsPerPx === oldMsPerPx && newOrigin === oldOrigin)) return
+    const time = oldOrigin + (scrollLeft.value + anchor) * oldMsPerPx
     void nextTick(() => {
-      el.scrollLeft += shift
+      el.scrollLeft = (time - newOrigin) / newMsPerPx - anchor
     })
   })
 
@@ -1054,17 +1061,11 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     if (initial !== null) void nextTick(() => scrollToDate(initial ?? Date.now(), 'center'))
   }, { immediate: true })
 
-  /** Changes zoom keeping the time under `anchorX` (px from the timeline's left edge) in place. */
+  /** Changes zoom keeping the time under `anchorX` (px from the timeline's left edge) in place, the center by default. */
   function setZoom(level: ZoomLevel, anchorX?: number) {
     if (level === zoom.value) return
-    const el = viewportEl.value
-    const anchor = anchorX ?? timelineWidth.value / 2
-    const time = xToTime(scrollLeft.value + anchor)
+    zoomAnchor = anchorX ?? null
     zoom.value = level
-    if (!el) return
-    void nextTick(() => {
-      el.scrollLeft = timeToX(time) - anchor
-    })
   }
 
   function zoomIn(anchorX?: number) {

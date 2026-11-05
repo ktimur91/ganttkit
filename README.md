@@ -92,7 +92,7 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | `rows` | required | Sidebar rows. |
 | `items` | rows with dates | Bars. Omit for one task per row. |
 | `links` | `[]` | Dependencies. |
-| `v-model:zoom` | `'week'` | `'hour' \| 'day' \| 'week' \| 'month' \| 'quarter'` |
+| `v-model:zoom` | `'week'` | `'hour' \| 'day' \| 'week' \| 'month' \| 'quarter'`. Changing it, from your own buttons too, keeps the date in the middle of the view in place. |
 | `time-zone` | browser zone | IANA zone, e.g. `'Europe/Berlin'`. |
 | `locale` | browser locale | Locale for the timescale labels. |
 | `row-height` | `36` | Row height in px. |
