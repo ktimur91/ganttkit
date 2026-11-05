@@ -80,7 +80,7 @@ Rows and bars can be separate, for example bookings in people's rows. Each booki
 | `row.id`, `row.parentId` | Rows form a tree through `parentId`. |
 | `item.start`, `item.end` | `Date`, epoch ms, `YYYY-MM-DD` or ISO string. `end` is exclusive: a one-day task on Nov 2 ends on `'2026-11-03'`. `end <= start` is a milestone. |
 | `item.rowId` | Row of the bar. Defaults to the item's own `id`. |
-| `item.name`, `item.progress`, `item.color`, `item.type` | Used by the default bar: label, progress from 0 to 1, CSS color, `'summary'` for a project bar. |
+| `item.name`, `item.progress`, `item.color`, `item.type` | Used by the default bar: label, progress from 0 to 1 (the done part is filled), any CSS color (the bar is a tint of it, the theme's `primary` by default), `'summary'` for a project bar. |
 | `link.from`, `link.to`, `link.type` | Item ids and `'FS' \| 'SS' \| 'FF' \| 'SF'` (default `FS`). |
 
 Date strings without an offset are read in `timeZone` (the browser's zone by default).
@@ -127,7 +127,7 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | --- | --- |
 | `sidebar-header` | |
 | `row` | `{ row, id, depth, hasChildren, expanded, top, height, lanes, overloads }` |
-| `bar` | Bar state: `{ item, start, end, x, y, width, height, lane, milestone, dragging }` |
+| `bar` | Bar state: `{ item, start, end, x, y, width, height, lane, milestone, dragging }`. The content goes into a flex row inside the bar, e.g. a name, a percentage and an avatar with `ml-auto`. |
 | `tooltip` | `{ bar, description: { dates, duration }, movingTo }`, `movingTo` is the target row while a bar is dragged to another one. |
 | `menu` | `{ item, close }`: your own actions at the top of the right-click menu. With this slot the menu opens in every mode, not only for resources. |
 | `timeline` | Extra layers inside the timeline, e.g. markers. |

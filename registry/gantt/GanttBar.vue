@@ -79,6 +79,7 @@ function onKeydown(event: KeyboardEvent) {
       width: `${bar.width}px`,
       height: `${bar.height}px`,
       transform: `translate(${bar.x}px, ${bar.y}px)`,
+      '--gantt-bar': item.color ?? 'var(--primary)',
     }"
     @pointerdown="startDrag($event, bar.id, 'move')"
     @pointerenter="hoveredItemId = bar.id"
@@ -91,40 +92,42 @@ function onKeydown(event: KeyboardEvent) {
   >
     <div
       v-if="bar.milestone"
-      class="size-full scale-[0.72] rotate-45 rounded-[3px] bg-primary group-focus-visible:ring-2 group-focus-visible:ring-ring"
+      class="size-full scale-[0.72] rotate-45 rounded-[3px] bg-(--gantt-bar) group-focus-visible:ring-2 group-focus-visible:ring-ring"
       :class="selected && 'ring-2 ring-ring ring-offset-1 ring-offset-background'"
-      :style="item.color ? { backgroundColor: item.color } : undefined"
     />
     <div
       v-else-if="summary"
       class="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-[2px] bg-foreground/70"
     />
+    <!-- A tint of the bar color, the done part of it a stronger tint. The color is the theme's primary or item.color. -->
     <div
       v-else
       :class="
         cn(
-          'relative flex size-full items-center overflow-hidden rounded-md bg-primary text-primary-foreground shadow-xs transition-shadow',
+          'relative flex size-full items-center overflow-hidden rounded-md border text-xs transition-shadow',
+          'border-[color-mix(in_oklab,var(--gantt-bar)_35%,transparent)] bg-[color-mix(in_oklab,var(--gantt-bar)_16%,var(--background))]',
+          'text-[color-mix(in_oklab,var(--gantt-bar)_55%,var(--foreground))]',
+          'group-hover:border-[color-mix(in_oklab,var(--gantt-bar)_60%,transparent)]',
           'group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-1 group-focus-visible:ring-offset-background',
           selected && 'ring-2 ring-ring ring-offset-1 ring-offset-background',
           bar.dragging && 'shadow-lg',
         )
       "
-      :style="item.color ? { backgroundColor: item.color } : undefined"
     >
       <div
         v-if="progress > 0"
-        class="absolute bottom-0 left-0 h-[3px] bg-primary-foreground/60"
+        class="absolute inset-y-0 left-0 bg-[color-mix(in_oklab,var(--gantt-bar)_38%,var(--background))]"
         :style="{ width: `${progress * 100}%` }"
       />
-      <span v-if="!narrow" class="relative truncate px-2 text-xs">
-        <slot>{{ label }}</slot>
+      <span v-if="!narrow" class="relative flex min-w-0 flex-1 items-center gap-1.5 px-2">
+        <slot><span class="truncate">{{ label }}</span></slot>
       </span>
     </div>
 
     <!-- Offset past the link elbow (12px), so outgoing links do not cross the label. -->
     <span
       v-if="labelOutside && label"
-      class="pointer-events-none absolute top-1/2 left-full ml-5 -translate-y-1/2 text-xs whitespace-nowrap text-muted-foreground"
+      class="pointer-events-none absolute top-1/2 left-full ml-5 flex -translate-y-1/2 items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground"
       :class="summary && 'font-medium text-foreground'"
     >
       <slot>{{ label }}</slot>
@@ -150,7 +153,7 @@ function onKeydown(event: KeyboardEvent) {
         :aria-label="side === 'start' ? 'Link from start' : 'Link from end'"
         :class="
           cn(
-            'absolute top-1/2 size-3 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-primary bg-background opacity-0 transition-opacity group-hover:opacity-100',
+            'absolute top-1/2 size-3 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-(--gantt-bar) bg-background opacity-0 transition-opacity group-hover:opacity-100',
             side === 'start' ? '-left-4' : '-right-4',
           )
         "
