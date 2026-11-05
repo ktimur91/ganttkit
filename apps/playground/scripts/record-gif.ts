@@ -1,14 +1,15 @@
-// Records docs/demo.gif from the playground. Light theme, projects: auto-shift, a new link, zoom and
-// a fast scroll. Then dark theme, resources: tooltip, the right-click menu and a drag to another person.
+// Records docs/demo.gif from the playground. Light theme, dashboard: auto-shift, zoom and the code panel.
+// Projects: zoom out and a fast scroll through 10 000 rows. Then dark theme, resources: the right-click
+// menu and a drag to another person.
 // Usage: pnpm build && pnpm preview, then in another terminal: pnpm record:gif
-// DEMO_URL=https://ktimur91.github.io/ganttkit/?theme=light&zoom=week records the live demo instead.
+// DEMO_URL=https://ktimur91.github.io/ganttkit/?theme=light records the live demo instead.
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type Locator, type Page, chromium } from '@playwright/test'
 
-const URL = process.env.DEMO_URL ?? 'http://localhost:5281/?theme=light&zoom=week'
+const URL = process.env.DEMO_URL ?? 'http://localhost:5281/?theme=light'
 const OUT = new globalThis.URL('../../../docs/demo.gif', import.meta.url).pathname
 const SIZE = { width: 1280, height: 720 }
 
@@ -55,19 +56,6 @@ async function barBox(page: Page, id: string) {
   return box
 }
 
-/** Draggable bars inside the timeline, top to bottom. */
-function visibleBars(page: Page) {
-  return page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>('[data-gantt-item].cursor-grab')]
-      .map((el) => {
-        const box = el.getBoundingClientRect()
-        return { id: el.dataset.ganttItem!, left: box.left, right: box.right, top: box.top, width: box.width }
-      })
-      .filter((bar) => bar.left > 380 && bar.right < innerWidth - 60 && bar.top > 120 && bar.top < innerHeight - 80)
-      .sort((a, b) => a.top - b.top),
-  )
-}
-
 async function main() {
   const videoDir = mkdtempSync(join(tmpdir(), 'ganttkit-gif-'))
   const browser = await chromium.launch()
@@ -75,47 +63,62 @@ async function main() {
   await context.addInitScript(CURSOR)
   const page = await context.newPage()
   await page.goto(URL)
-  await page.locator('[data-gantt-item="p0t2"]').waitFor()
-  await page.mouse.move(SIZE.width / 2, SIZE.height / 2)
-  mouse = { x: SIZE.width / 2, y: SIZE.height / 2 }
+  await page.locator('[data-gantt-item="backend"]').waitFor()
+  // Start in the empty part of the toolbar, so no tooltip is open on the first frame.
+  mouse = { x: SIZE.width * 0.6, y: 84 }
+  await page.mouse.move(mouse.x, mouse.y)
   const started = Date.now()
-  await pause(page, 700)
+  await pause(page, 1200)
 
-  // Auto-shift: move Research by four days, the tasks linked after it move along.
-  let box = await barBox(page, 'p0t2')
-  await glide(page, box.x + box.width / 2, box.y + box.height / 2)
-  await pause(page, 250)
+  // Dashboard, auto-shift: move Backend services by three days, the tasks after it move along.
+  let box = await barBox(page, 'backend')
+  await glide(page, box.x + 40, box.y + box.height / 2)
+  await pause(page, 500)
   await page.mouse.down()
-  await glide(page, box.x + box.width / 2 + 4 * 18, box.y + box.height / 2, 40)
-  await pause(page, 700)
+  await glide(page, box.x + 40 + 3 * 18, box.y + box.height / 2, 40)
+  await pause(page, 800)
   await page.mouse.up()
-  await pause(page, 600)
+  await pause(page, 700)
 
-  // Draw a dependency from one bar's end dot to a bar a few rows down.
-  const bars = await visibleBars(page)
-  const fromBar = bars.find((bar) => bar.width >= 30)
-  const toBar = bars.find((bar) => fromBar && bar.top > fromBar.top + 60 && bar.left > fromBar.right + 30)
-  if (!fromBar || !toBar) throw new Error(`no bars to link: ${bars.map((bar) => bar.id).join(', ')}`)
-  box = await barBox(page, fromBar.id)
-  await glide(page, box.x + box.width / 2, box.y + box.height / 2)
+  // Zoom out to months and back: the plan stays in view.
+  for (const name of ['Month', 'Week']) {
+    const button = page.getByRole('button', { name, exact: true })
+    await glideTo(page, button)
+    await pause(page, 200)
+    await button.click()
+    await pause(page, 900)
+  }
+
+  // The code of the example, ready to copy.
+  const code = page.getByRole('button', { name: 'Code', exact: true })
+  await glideTo(page, code)
   await pause(page, 200)
-  await glideTo(page, page.locator(`[data-gantt-item="${fromBar.id}"]`).getByRole('button', { name: 'Link from end' }), 10)
-  const links = page.locator('[data-slot="gantt"] svg g')
-  const linkCount = await links.count()
-  await page.mouse.down()
-  const to = await barBox(page, toBar.id)
-  await glide(page, to.x + 6, to.y + to.height / 2, 30)
-  await page.mouse.up()
+  await code.click()
+  await page.locator('.code .shiki').waitFor()
   await pause(page, 600)
-  if ((await links.count()) !== linkCount + 1) throw new Error('the link was not created')
+  const copy = page.getByRole('button', { name: 'Copy', exact: true })
+  await glideTo(page, copy)
+  await pause(page, 200)
+  await copy.click()
+  await pause(page, 900)
+  const close = page.getByRole('button', { name: 'Close code' })
+  await glideTo(page, close)
+  await close.click()
+  await pause(page, 400)
 
-  // Zoom out with Ctrl + wheel, scroll fast through 10 000 rows, zoom back in.
+  // Projects: zoom out with Ctrl + wheel, scroll fast through 10 000 rows, zoom back in.
+  const projects = page.getByRole('tab', { name: 'Projects' })
+  await glideTo(page, projects)
+  await pause(page, 200)
+  await projects.click()
+  await page.locator('[data-gantt-item="p0t2"]').waitFor()
+  await pause(page, 700)
   await glide(page, SIZE.width * 0.65, SIZE.height * 0.55)
   await page.keyboard.down('Control')
   await page.mouse.wheel(0, 100)
   await page.keyboard.up('Control')
-  await pause(page, 700)
-  for (let i = 0; i < 18; i++) {
+  await pause(page, 600)
+  for (let i = 0; i < 12; i++) {
     await page.mouse.wheel(0, 900)
     await pause(page, 40)
   }
@@ -126,23 +129,14 @@ async function main() {
   await pause(page, 600)
 
   // Dark theme, then the resource view.
-  for (const name of ['Dark', 'Resources']) {
-    const button = page.getByRole('button', { name, exact: true })
+  for (const button of [page.getByRole('button', { name: 'Dark', exact: true }), page.getByRole('tab', { name: 'Resources' })]) {
     await glideTo(page, button)
     await pause(page, 200)
     await button.click()
     await pause(page, 600)
   }
   await page.locator('[data-gantt-item="hotfix"]').waitFor()
-  await pause(page, 300)
-
-  // Hover a booking for its tooltip.
-  const hover = (await visibleBars(page)).find((bar) => bar.id !== 'hotfix' && bar.width > 50 && bar.top > 220)
-  if (hover) {
-    box = await barBox(page, hover.id)
-    await glide(page, box.x + Math.min(box.width / 2, 40), box.y + box.height / 2)
-    await pause(page, 1300)
-  }
+  await pause(page, 600)
 
   // The hotfix double-books the first person, Alex: right-click it and give it to someone free.
   box = await barBox(page, 'hotfix')
@@ -209,10 +203,10 @@ async function main() {
 
   const [video] = readdirSync(videoDir)
   const input = join(videoDir, video!)
-  // Skip the page load at the start, two-pass palette for clean flat colors.
+  // Skip the page load at the start, two-pass palette for clean flat colors. 128 colors keep it near 5 MB.
   const skip = Math.max(0, (await durationOf(input)) - seconds).toFixed(2)
-  const filters = 'fps=15,scale=960:-1:flags=lanczos'
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', skip, '-i', input, '-vf', `${filters},palettegen=stats_mode=diff`, join(videoDir, 'palette.png')])
+  const filters = 'fps=12,scale=900:-1:flags=lanczos'
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', skip, '-i', input, '-vf', `${filters},palettegen=max_colors=128:stats_mode=diff`, join(videoDir, 'palette.png')])
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', skip, '-i', input, '-i', join(videoDir, 'palette.png'), '-lavfi', `${filters}[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle`, OUT])
   rmSync(videoDir, { recursive: true, force: true })
   console.log(`wrote ${OUT}`)
