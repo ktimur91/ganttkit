@@ -13,7 +13,7 @@ Gantt chart for Vue 3 that lives in your codebase.
 - **Copy-in components** in the shadcn-vue style: `npx shadcn-vue add` puts plain `.vue` files into `components/ui/gantt`. Restyle them with Tailwind, change the markup, keep the core updatable from npm.
 - **Fast with big plans**: 50 000 rows render about 40 rows and their bars. Scrolling recomputes the window only when it crosses a chunk of rows.
 
-![Dragging, resizing and linking bars, zooming with Ctrl + wheel and scrolling 10 000 rows](docs/demo.gif)
+![Auto-shift, linking, Ctrl + wheel zoom and a fast scroll through 10 000 rows, then the dark theme and the resource view with a tooltip, the right-click menu and a drag to another person](docs/demo.gif)
 
 ## Features
 
