@@ -7,7 +7,7 @@
 
 Gantt chart for Vue 3 that lives in your codebase.
 
-**[Live demo](https://ktimur91.github.io/ganttkit/)** with 1 000 to 50 000 rows, and a [resource view](https://ktimur91.github.io/ganttkit/?view=resources) with up to 10 000 people.
+**[Live demo](https://ktimur91.github.io/ganttkit/)**: a [project dashboard](https://ktimur91.github.io/ganttkit/), [1 000 to 50 000 rows](https://ktimur91.github.io/ganttkit/?view=projects) and a [resource view](https://ktimur91.github.io/ganttkit/?view=resources) with up to 10 000 people. Each example has a Code button with its source, ready to copy.
 
 - **Headless core** (`ganttkit` on npm): `useGantt` handles dates, time zones, layout, virtual scrolling, drag and drop, dependencies and zoom. No styles, no DOM assumptions beyond a scroll container.
 - **Copy-in components** in the shadcn-vue style: `npx shadcn-vue add` puts plain `.vue` files into `components/ui/gantt`. Restyle them with Tailwind, change the markup, keep the core updatable from npm.
@@ -257,7 +257,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 ```bash
 pnpm install
-pnpm dev            # playground on http://localhost:5280, ?zoom=month&theme=dark work too
+pnpm dev            # playground on http://localhost:5280, ?view=projects|resources, ?theme=dark and ?code=1 work too
 pnpm test           # core tests
 pnpm e2e            # Playwright: Chromium, Firefox, WebKit, Android and iPhone profiles
 pnpm typecheck
@@ -268,7 +268,7 @@ pnpm --filter playground record:gif   # re-record docs/demo.gif, needs pnpm prev
 ```
 packages/core     ganttkit on npm: useGantt and the pure date, layout and link math
 registry/gantt    shadcn-vue components
-apps/playground   demo with 1 000 to 50 000 rows
+apps/playground   demo: dashboard, projects (1 000 to 50 000 rows) and resources
 ```
 
 Releases: bump `packages/core/package.json`, then push a matching `vX.Y.Z` tag. GitHub Actions publishes to npm with provenance.

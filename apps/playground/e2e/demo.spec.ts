@@ -5,7 +5,7 @@ const DAY_PX = 18
 
 const chart = (page: Page) => page.locator('[data-slot="gantt"]')
 
-async function open(page: Page, query = '') {
+async function open(page: Page, query = '?view=projects') {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => {
@@ -66,7 +66,8 @@ test('renders rows, bars, links and the timescale without errors', async ({ page
 })
 
 test('virtual scroll keeps the DOM small and renders rows far down', async ({ page }) => {
-  await open(page, '?zoom=month')
+  await open(page)
+  await page.getByRole('button', { name: 'Month' }).click()
   const scrolled = await chart(page).evaluate(async (el) => {
     el.scrollTop = el.scrollHeight / 2
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -331,5 +332,58 @@ test.describe('auto-shift', () => {
     await open(page)
     await page.getByRole('button', { name: 'Auto-shift' }).click()
     expect(await resizeAndMeasure(page)).toBe(0)
+  })
+})
+
+test.describe('dashboard', () => {
+  test('is the first page and renders without errors', async ({ page }) => {
+    const errors = await open(page, '')
+    await expect(page.getByRole('tab', { name: 'Dashboard' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('img', { name: 'Blocked' }).first()).toBeVisible()
+    expect(await chart(page).locator('svg g').count()).toBeGreaterThan(0)
+    expect(errors).toEqual([])
+  })
+
+  test('the dependencies switch hides the links', async ({ page }) => {
+    await open(page, '')
+    await page.getByRole('switch', { name: 'Dependencies' }).click()
+    await expect(chart(page).locator('svg g')).toHaveCount(0)
+  })
+
+  test('switching the zoom keeps the same dates in view', async ({ page }) => {
+    await open(page, '')
+    const today = page.locator('[data-gantt-item="wireframes"]')
+    await expect(today).toBeInViewport()
+    for (const level of ['Month', 'Day', 'Week']) {
+      await page.getByRole('button', { name: level, exact: true }).click()
+      await expect(today).toBeInViewport()
+    }
+  })
+
+  test('tabs switch the example and keep it in the address', async ({ page }) => {
+    await open(page, '')
+    await page.getByRole('tab', { name: 'Resources' }).click()
+    await expect(page.locator('footer')).toContainText(/double-booked/)
+    expect(new URL(page.url()).searchParams.get('view')).toBe('resources')
+  })
+})
+
+test.describe('code panel', () => {
+  test('shows the source of the open example and copies it', async ({ page, context, browserName }) => {
+    if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    const errors = await open(page, '')
+    await page.getByRole('button', { name: 'Code', exact: true }).click()
+    const panel = page.getByRole('complementary', { name: 'Source code' })
+    await expect(panel.getByRole('tab', { name: 'DashboardExample.vue' })).toHaveAttribute('aria-selected', 'true')
+    await expect(panel).toContainText("from '@/components/ui/gantt'")
+    // Colors arrive once the highlighter has loaded.
+    await expect(panel.locator('.shiki')).toBeVisible()
+    await panel.getByRole('tab', { name: 'data.ts' }).click()
+    await expect(panel).toContainText('export function createPlan')
+    await panel.getByRole('button', { name: 'Copy' }).click()
+    await expect(panel.getByRole('button', { name: 'Copied' })).toBeVisible()
+    await page.getByRole('button', { name: 'Close code' }).click()
+    await expect(panel).toBeHidden()
+    expect(errors).toEqual([])
   })
 })

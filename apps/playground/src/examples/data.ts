@@ -122,7 +122,11 @@ export interface DemoBooking {
   name: string
   start: string
   end: string
+  color: string
 }
+
+// One color per project, so a project is easy to follow across people.
+const PROJECT_COLORS = PROJECTS.map((_, index) => `oklch(0.65 0.14 ${(index * 360) / PROJECTS.length + 20})`)
 
 const TEAMS = ['Design', 'Frontend', 'Backend', 'QA', 'DevOps', 'Support']
 const PEOPLE = [
@@ -157,7 +161,8 @@ export function generateResources(rowCount: number, seed = 11) {
         const gap = Math.floor(random() * random() * 14)
         const start = weekday(overlap ? cursor - (1 + Math.floor(random() * 3)) * DAY : cursor + gap * DAY)
         const end = start + (2 + Math.floor(random() * 9)) * DAY
-        bookings.push({ id: `${person}b${b}`, rowId: person, name: PROJECTS[Math.floor(random() * PROJECTS.length)]!, start: isoDay(start), end: isoDay(end) })
+        const project = Math.floor(random() * PROJECTS.length)
+        bookings.push({ id: `${person}b${b}`, rowId: person, name: PROJECTS[project]!, color: PROJECT_COLORS[project]!, start: isoDay(start), end: isoDay(end) })
         cursor = Math.max(cursor, end)
       }
     }
@@ -166,7 +171,7 @@ export function generateResources(rowCount: number, seed = 11) {
   const first = rows[1]
   if (first) {
     const start = weekday(today - DAY)
-    bookings.push({ id: 'hotfix', rowId: first.id, name: 'Hotfix', start: isoDay(start), end: isoDay(start + 3 * DAY) })
+    bookings.push({ id: 'hotfix', rowId: first.id, name: 'Hotfix', color: 'oklch(0.62 0.21 25)', start: isoDay(start), end: isoDay(start + 3 * DAY) })
   }
   return { rows, bookings }
 }

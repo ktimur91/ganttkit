@@ -73,3 +73,43 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* Code panel: shiki writes both themes as CSS variables, the page theme picks one. */
+.code {
+  @apply min-w-fit py-3 font-mono text-[13px] leading-relaxed;
+}
+.code pre {
+  background: transparent !important;
+}
+.code .shiki,
+.code .shiki span {
+  color: var(--shiki-light);
+}
+.dark .code .shiki,
+.dark .code .shiki span {
+  color: var(--shiki-dark);
+}
+.code code {
+  counter-reset: line;
+  display: block;
+}
+.code .line {
+  display: inline-block;
+  min-width: 100%;
+  padding-right: 1rem;
+}
+.code .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3rem;
+  margin-right: 1rem;
+  padding-right: 0.25rem;
+  text-align: right;
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+pre.code {
+  padding-left: 1rem;
+  white-space: pre;
+}
