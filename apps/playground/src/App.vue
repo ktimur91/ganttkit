@@ -75,7 +75,13 @@ const exampleIndex = computed(() => EXAMPLES.indexOf(example.value))
           <rect x="8" y="20" width="9" height="4" rx="2" class="fill-background" />
         </svg>
         <span class="font-semibold tracking-tight">ganttkit</span>
-        <span class="rounded-full border px-1.5 py-px text-[11px] text-muted-foreground tabular-nums">v{{ version }}</span>
+      </a>
+      <a
+        href="https://github.com/ktimur91/ganttkit/blob/main/CHANGELOG.md"
+        class="-ml-1 rounded-full border px-1.5 py-px text-[11px] text-muted-foreground tabular-nums hover:border-foreground/30 hover:text-foreground sm:-ml-3"
+        :title="`What's new in ${version}`"
+      >
+        v{{ version }}
       </a>
 
       <nav class="order-last -mx-1 flex w-full min-w-0 gap-1 overflow-x-auto px-1 sm:order-none sm:w-auto" role="tablist" aria-label="Examples">

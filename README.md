@@ -244,6 +244,7 @@ See [`registry/gantt`](registry/gantt) for a complete implementation.
 
 - Bugs and feature requests: [Issues](https://github.com/ktimur91/ganttkit/issues)
 - Questions and ideas: [Discussions](https://github.com/ktimur91/ganttkit/discussions)
+- What changed in each version: [CHANGELOG.md](CHANGELOG.md)
 
 ganttkit is free and MIT licensed. If it saves you time, you can support its development:
 
@@ -271,7 +272,7 @@ registry/gantt    shadcn-vue components
 apps/playground   demo: dashboard, projects (1 000 to 50 000 rows) and resources
 ```
 
-Releases: bump `packages/core/package.json`, then push a matching `vX.Y.Z` tag. GitHub Actions publishes to npm with provenance.
+Releases: add the changes to [CHANGELOG.md](CHANGELOG.md), bump `packages/core/package.json`, then push a matching `vX.Y.Z` tag. GitHub Actions publishes to npm with provenance.
 
 ## License
 
