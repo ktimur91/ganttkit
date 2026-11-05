@@ -9,7 +9,7 @@
       "title": "Gantt",
       "description": "Gantt chart with virtual scrolling, drag and drop, dependencies and zoom. Built on the headless ganttkit core.",
       "dependencies": [
-        "ganttkit@^0.3.0"
+        "ganttkit@^0.3.1"
       ],
       "files": [
         {
