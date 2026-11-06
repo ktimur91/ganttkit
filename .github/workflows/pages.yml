@@ -30,6 +30,8 @@ jobs:
       - run: pnpm --filter playground build
         env:
           BASE_PATH: /ganttkit/
+          # Cloudflare Web Analytics site for ktimur91.github.io. The token is public, it ends up in the page.
+          CF_BEACON_TOKEN: 52a15d87594a4cfcb91771a762371ada
       - uses: actions/upload-pages-artifact@v5
         with:
           path: apps/playground/dist

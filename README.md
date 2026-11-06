@@ -7,7 +7,7 @@
 
 Gantt chart for Vue 3 that lives in your codebase.
 
-**[Live demo](https://ktimur91.github.io/ganttkit/)**: a [project dashboard](https://ktimur91.github.io/ganttkit/), [1 000 to 50 000 rows](https://ktimur91.github.io/ganttkit/?view=projects) and a [resource view](https://ktimur91.github.io/ganttkit/?view=resources) with up to 10 000 people. Each example has a Code button with its source, ready to copy.
+**[Live demo](https://ktimur91.github.io/ganttkit/)**: a [project dashboard](https://ktimur91.github.io/ganttkit/), [1 000 to 50 000 rows](https://ktimur91.github.io/ganttkit/?view=projects) and a [resource view](https://ktimur91.github.io/ganttkit/?view=resources) with up to 10 000 people. Each example has a Code button with its source, ready to copy. The demo counts visits with Cloudflare Web Analytics, without cookies.
 
 - **Headless core** (`ganttkit` on npm): `useGantt` handles dates, time zones, layout, virtual scrolling, drag and drop, dependencies and zoom. No styles, no DOM assumptions beyond a scroll container.
 - **Copy-in components** in the shadcn-vue style: `npx shadcn-vue add` puts plain `.vue` files into `components/ui/gantt`. Restyle them with Tailwind, change the markup, keep the core updatable from npm.
