@@ -8,6 +8,23 @@ To update the components after a release:
 npx shadcn-vue@latest add @ganttkit/gantt --overwrite
 ```
 
+## [0.4.0] - 2026-11-16
+
+### Added
+
+- `move-children` (`moveChildren`): dragging a bar, or moving it with the arrow keys, moves the bars in the rows below its row along, by the same number of working days with a calendar. A phase moves with its tasks. Locked bars stay, and with `auto-shift` successors outside the group are pushed too. The drag preview shows everything that moves.
+- `rollup`: summary bars span the bars in the rows below them, also while dragging, and cannot be resized. Changed spans are reported with `source: 'rollup'`. `is-summary` (`isSummary`) picks the summary items, `item.type === 'summary'` by default.
+- Two fingers on a touch screen zoom around their midpoint, one finger still scrolls. A pinch that starts while a bar is being dragged cancels the drag.
+- Nuxt: the components work with server rendering, see the new Nuxt section in the README and `apps/nuxt`.
+- Headless: `cancelInteraction()`, `buildRowTree`, `descendantRows`, `rollupRows` and `shiftSpan`. Bar state has `summary` and `resizable`.
+
+### Changed
+
+- `item-change` `source` can also be `'children'` and `'rollup'`.
+- The timeline (timescale, grid, bars and links) renders once the chart is mounted, so server-rendered pages hydrate without mismatches. In a plain Vue app this happens in the same tick.
+- The default bar takes summary status and resize handles from the bar state (`bar.summary`, `bar.resizable`), so `is-summary` and `rollup` apply to it.
+- The demo: dragging a phase or a project moves its tasks.
+
 ## [0.3.1] - 2026-11-05
 
 ### Fixed

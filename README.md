@@ -21,15 +21,17 @@ Gantt chart for Vue 3 that lives in your codebase.
 - Drag to move, drag edges to resize, keyboard nudging (arrows move, Shift + arrows resize)
 - Dependencies: FS, SS, FF, SF. Create by dragging from a bar's dot, cycle and duplicate protection, broken links highlighted, Delete removes the selected link
 - Auto-shift: when a task moves past its successors, they move forward with it, keeping their length
+- Phases: dragging a summary bar moves its tasks along, and summary bars span their tasks while you edit them
 - Resource view: overlapping bars stack into lanes and the row grows, double bookings are marked, drag a bar to another row or press Alt + Up/Down
 - Right-click menu on a bar: "Move to" with search, free rows first and busy ones marked, plus your own actions
 - Tooltip with dates and duration, showing the new ones while you drag
-- Zoom levels from hours to quarters, Ctrl/Cmd + wheel zooms around the pointer
+- Zoom levels from hours to quarters, Ctrl/Cmd + wheel, a trackpad pinch or two fingers on a touch screen zoom around the pointer
 - Working calendars: weekends and holidays are skipped when you drag, resize or nudge, lengths stay in working days, days off are shaded
 - Undo and redo with `useGanttHistory`
 - Time zone aware: day, week and month boundaries follow the zone you pass, DST days are 23 or 25 hours long
 - Edits come back in your date format: `'2026-11-02'` stays a date string, `Date` stays a `Date`
 - Light and dark theme through shadcn-vue CSS variables
+- Works with server rendering in Nuxt, see [Nuxt](#nuxt)
 
 ## Requirements
 
@@ -101,6 +103,9 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | `editable` | `true` | `false`, or `{ move, resize, link, reassign }` to switch parts off. |
 | `is-item-editable` | | `(item) => boolean`, e.g. to lock summary bars. |
 | `auto-shift` | `false` | Push successors forward after an edit, see [Auto-shift](#auto-shift). |
+| `move-children` | `false` | Moving a bar moves the bars in the rows below its row, see [Phases](#phases). |
+| `rollup` | `false` | Summary bars span the bars in the rows below them, see [Phases](#phases). |
+| `is-summary` | `type === 'summary'` | `(item) => boolean`: which items are summary bars. |
 | `stack-overlaps` | `true` | Overlapping bars of a row stack into lanes and the row grows. |
 | `get-row-capacity` | `1` | `(row) => number`: bars a row can run at once before it counts as overloaded. |
 | `can-move-to-row` | all rows | `(item, row) => boolean`: rows a bar may be dragged to. |
@@ -116,8 +121,8 @@ Date strings without an offset are read in `timeZone` (the browser's zone by def
 | event | payload |
 | --- | --- |
 | `update:rows`, `update:items`, `update:links` | New array, for `v-model`. `update:rows` fires in one-task-per-row mode. |
-| `item-change` | `{ item, start, end, startMs, endMs, rowId?, source }` with dates in the item's own format. `rowId` is set when the bar moved to another row, `source` is `'edit'` or `'auto-shift'`. Fires once per changed item. |
-| `items-change` | All changes of one edit at once: the edited item first, then the successors auto-shift moved. Use it for one undo step or one save request. |
+| `item-change` | `{ item, start, end, startMs, endMs, rowId?, source }` with dates in the item's own format. `rowId` is set when the bar moved to another row. `source` is `'edit'` for the edited item, `'children'` for bars `move-children` moved along, `'auto-shift'` for pushed successors and `'rollup'` for summary bars whose span changed. Fires once per changed item. |
+| `items-change` | All changes of one edit at once, the edited item first. Use it for one undo step or one save request. |
 | `item-click` | The item. |
 | `link-create`, `link-delete` | The link. |
 
@@ -157,6 +162,19 @@ Pass people (or machines, rooms) as `rows` and their bookings as `items` with a 
 ```
 
 When an edit breaks a link (a task now ends after its successor starts), the successor moves forward just enough, and so on down the chain. Lengths stay the same, in working days with a [calendar](#working-calendars). Items only move later, never earlier, and read-only items stay put with their link shown as broken. The drag preview shows the shifted tasks before you let go.
+
+### Phases
+
+```vue
+<Gantt :rows="tasks" move-children rollup @items-change="save" />
+```
+
+Rows form a tree through `parentId`, and a parent row can hold a summary bar (`type: 'summary'`, or your own `is-summary`):
+
+- `move-children`: dragging a bar, or moving it with the arrow keys, also moves every bar in the rows below its row by the same amount, in working days with a [calendar](#working-calendars). Locked bars stay. With `auto-shift` their successors outside the group are pushed too. The drag preview shows all of it before you let go.
+- `rollup`: a summary bar spans the bars in the rows below it, also while you drag one of them, and has no edges to resize. When an edit changes that span, `item-change` reports the summary with `source: 'rollup'`, so you can store the new dates or ignore them and keep computing phases yourself.
+
+Both work for resources too: a team row with a summary bar spans its people's bookings.
 
 ### Working calendars
 
@@ -235,10 +253,24 @@ const gantt = useGantt({
 // Render gantt.visibleRows, gantt.visibleBars, gantt.visibleLinks and gantt.ticks
 // Wire gantt.startDrag(event, id, mode) and gantt.startLink(event, id, side)
 // Keyboard: gantt.nudge(id, mode, steps) and gantt.moveToRow(id, 1 | -1)
+// gantt.cancelInteraction() ends a drag without saving it, e.g. when a second finger starts a pinch
 // Rows: gantt.toggleRow(id), gantt.expandAll(), gantt.collapseAll(), gantt.allExpanded
 ```
 
 See [`registry/gantt`](registry/gantt) for a complete implementation.
+
+### Nuxt
+
+The components work with server rendering. The server sends the chart frame and the timeline appears once the chart is mounted, because "now", the time zone and the locale on a server are not the ones in the browser. Add the components with the shadcn-vue CLI as in any project. If Nuxt auto-imports `app/components`, leave the `ui` folder out, so `ui/gantt/index.ts` and `Gantt.vue` do not clash:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  components: [{ path: '~/components', ignore: ['ui/**'] }],
+})
+```
+
+[`apps/nuxt`](apps/nuxt) is a working example, built in CI.
 
 ## Support
 
@@ -259,6 +291,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 ```bash
 pnpm install
 pnpm dev            # playground on http://localhost:5280, ?view=projects|resources, ?theme=dark and ?code=1 work too
+pnpm --filter nuxt-example dev   # the Nuxt example on http://localhost:5290
 pnpm test           # core tests
 pnpm e2e            # Playwright: Chromium, Firefox, WebKit, Android and iPhone profiles
 pnpm typecheck
@@ -270,6 +303,7 @@ pnpm --filter playground record:gif   # re-record docs/demo.gif, needs pnpm prev
 packages/core     ganttkit on npm: useGantt and the pure date, layout and link math
 registry/gantt    shadcn-vue components
 apps/playground   demo: dashboard, projects (1 000 to 50 000 rows) and resources
+apps/nuxt         the components in a Nuxt app with server rendering
 ```
 
 Releases: add the changes to [CHANGELOG.md](CHANGELOG.md), bump `packages/core/package.json`, then push a matching `vX.Y.Z` tag. GitHub Actions publishes to npm with provenance.
