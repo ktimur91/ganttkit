@@ -21,14 +21,14 @@ const { startDrag, startLink, nudge, moveToRow, editable, selectedItemId, hovere
 const root = useTemplateRef<HTMLElement>('root')
 const item = computed(() => props.bar.item)
 const label = computed(() => item.value.name ?? item.value.title ?? '')
-const summary = computed(() => item.value.type === 'summary')
+const summary = computed(() => props.bar.summary)
 const progress = computed(() => Math.min(1, Math.max(0, item.value.progress ?? 0)))
 const selected = computed(() => selectedItemId.value === props.bar.id)
 // Narrow bars show their label outside, to the right, when it fits before the next bar.
 const narrow = computed(() => props.bar.milestone || props.bar.width < 56)
 const labelOutside = computed(() => narrow.value && props.bar.room > 24 + label.value.length * 7)
 const canMove = computed(() => props.bar.editable && editable.value.move)
-const canResize = computed(() => props.bar.editable && editable.value.resize && !props.bar.milestone)
+const canResize = computed(() => props.bar.resizable && !props.bar.milestone)
 const canLink = computed(() => props.bar.editable && editable.value.link)
 
 function onContextMenu(event: MouseEvent) {

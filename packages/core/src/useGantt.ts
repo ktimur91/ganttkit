@@ -11,6 +11,7 @@ import {
 } from 'vue'
 import { type WorkingCalendar, createCalendar } from './calendar'
 import { type Snapper, applyDrag, createSnapper, nudgeSpan } from './drag'
+import { type Rollup, type RollupItem, buildRowTree, descendantRows, rollupRows, shiftSpan } from './groups'
 import { type LaneLayout, assignLanes, freeLane, overloadSpans } from './lanes'
 import { type FlatRow, chunkedRange, chunkedRowRange, flattenRows, rowIndexAt, sameRange } from './layout'
 import { isLinkViolated, linkPath, linkTypeFromSides, wouldCreateCycle } from './links'
@@ -51,8 +52,12 @@ export interface ItemChange<I> {
   endMs: number
   /** New row id, set only when the item was moved to another row. */
   rowId?: Id
-  /** `auto-shift` for successors pushed forward by `autoShift`, `edit` for the item the user changed. */
-  source: 'edit' | 'auto-shift'
+  /**
+   * `edit` for the item the user changed, `children` for items in the rows below it that `moveChildren`
+   * moved along, `auto-shift` for successors pushed forward by `autoShift`, `rollup` for summary items
+   * whose span `rollup` changed.
+   */
+  source: 'edit' | 'children' | 'auto-shift' | 'rollup'
 }
 
 export interface LinkDraft {
@@ -108,6 +113,18 @@ export interface UseGanttOptions<R extends GanttRowBase, I extends GanttItemBase
    * Items only move later, never earlier. Off by default.
    */
   autoShift?: MaybeRefOrGetter<boolean | undefined>
+  /**
+   * Moving an item also moves every item in the rows below its row, by the same amount (by working days
+   * with a calendar), e.g. a phase with its tasks. Locked items stay. Off by default.
+   */
+  moveChildren?: MaybeRefOrGetter<boolean | undefined>
+  /**
+   * Summary items take their span from the items in the rows below their row, also while dragging,
+   * and cannot be resized. Changed spans are reported with `source: 'rollup'`. Off by default.
+   */
+  rollup?: MaybeRefOrGetter<boolean | undefined>
+  /** Which items are summaries for `rollup`. Defaults to `item.type === 'summary'`. */
+  isSummary?: (item: I) => boolean
   /** Called for every changed item, the edited one first, then the ones moved by `autoShift`. */
   onItemChange?: (change: ItemChange<I>) => void
   /** All changes of one edit at once, for a single undo step or one save request. */
@@ -121,6 +138,7 @@ interface NormalizedItem<I> {
   rowId: string
   start: number
   end: number
+  summary: boolean
 }
 
 export interface OverloadSpan extends Span {
@@ -158,8 +176,12 @@ export interface GanttBarState<I> extends Rect {
   start: number
   end: number
   milestone: boolean
+  /** A summary item, see `isSummary`. */
+  summary: boolean
   dragging: boolean
   editable: boolean
+  /** The edges can be dragged: editable, resizing allowed and not a rolled-up summary. */
+  resizable: boolean
 }
 
 export interface GanttLinkState {
@@ -183,6 +205,8 @@ export interface GanttDraft {
 
 const NO_LAYOUTS: ReadonlyMap<string, LaneLayout> = new Map()
 const NO_SPANS: ReadonlyMap<string, Span[]> = new Map()
+const NO_ROLLUP: Rollup = { rows: new Map(), summaries: new Map() }
+const NO_MOVES: ReadonlyMap<string, Span> = new Map()
 
 const ROW_CHUNK = 10
 const X_CHUNK = 600
@@ -215,6 +239,9 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   const laneGap = computed(() => toValue(options.laneGap) ?? 4)
   const lanePitch = computed(() => rowHeight.value - barInset.value * 2 + laneGap.value)
   const autoShift = computed(() => toValue(options.autoShift) ?? false)
+  const moveChildren = computed(() => toValue(options.moveChildren) ?? false)
+  const rollup = computed(() => toValue(options.rollup) ?? false)
+  const isSummary = options.isSummary ?? ((item: I) => (item as { type?: unknown }).type === 'summary')
   const sidebarWidth = computed(() => toValue(options.sidebarWidth) ?? 280)
   const headerHeight = computed(() => toValue(options.headerHeight) ?? 56)
   const weekStartsOn = options.weekStartsOn ?? 1
@@ -297,6 +324,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
         rowId: String(getItemRowId(item)),
         start,
         end,
+        summary: isSummary(item),
       }
       byId.set(normalized.id, normalized)
       const list = byRow.get(normalized.rowId)
@@ -326,13 +354,80 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
 
   /** The item being dragged: its span and row while the pointer is down. */
   const draft = shallowRef<GanttDraft | null>(null)
-  /** Successors `autoShift` would push, previewed while dragging. */
+  /** Other items the drag moves along, previewed: children (`moveChildren`) and successors (`autoShift`). */
   const shiftDraft = shallowRef<ReadonlyMap<string, Span> | null>(null)
+
+  /** Parents and children of all rows, collapsed ones included. */
+  const rowTree = computed(() => buildRowTree(toValue(options.rows), getRowId, getParentId))
+
+  const rolledUp = (normalized: NormalizedItem<I>) => rollup.value && normalized.summary
+
+  /** Rolled-up spans of the saved data. */
+  const committedRollup = computed<Rollup>(() => {
+    if (!rollup.value) return NO_ROLLUP
+    const { bottomUp, children } = rowTree.value
+    const byRow = itemIndex.value.byRow
+    return rollupRows(bottomUp, children, (rowId) => byRow.get(rowId) ?? [])
+  })
+
+  /**
+   * Rolled-up spans with some items at new spans and one maybe moved to another row. Only the rows
+   * above the touched items are redone, the rest comes from the saved data.
+   */
+  function rollupWith(spans: ReadonlyMap<string, Span>, moved?: { id: string; from: string; to: string }): Rollup {
+    const { parent, depth, children } = rowTree.value
+    const { byId, byRow } = itemIndex.value
+    const touched = new Set<string>()
+    const climb = (rowId: string | undefined) => {
+      for (let row = rowId ?? null; row !== null && !touched.has(row); row = parent.get(row) ?? null) touched.add(row)
+    }
+    for (const id of spans.keys()) climb(byId.get(id)?.rowId)
+    if (moved) {
+      climb(moved.from)
+      climb(moved.to)
+    }
+    const order = [...touched].filter((row) => depth.has(row)).sort((a, b) => depth.get(b)! - depth.get(a)!)
+    const at = (normalized: NormalizedItem<I>): RollupItem => {
+      const span = spans.get(normalized.id)
+      return span ? { id: normalized.id, summary: normalized.summary, start: span.start, end: span.end } : normalized
+    }
+    function* itemsOf(rowId: string): Iterable<RollupItem> {
+      for (const normalized of byRow.get(rowId) ?? []) {
+        if (moved?.id === normalized.id && moved.to !== rowId) continue
+        yield at(normalized)
+      }
+      if (moved && moved.to === rowId && moved.from !== rowId) {
+        const normalized = byId.get(moved.id)
+        if (normalized) yield at(normalized)
+      }
+    }
+    return rollupRows(order, children, itemsOf, committedRollup.value.rows)
+  }
+
+  /** Rolled-up spans while dragging, `null` when nothing is being dragged. */
+  const draftRollup = computed<Rollup | null>(() => {
+    const active = draft.value
+    const moves = shiftDraft.value
+    if (!rollup.value || (!active && !moves)) return null
+    const spans = new Map(moves ?? [])
+    if (active) spans.set(active.id, active)
+    const moved = active && active.fromRowId !== active.rowId ? { id: active.id, from: active.fromRowId, to: active.rowId } : undefined
+    return rollupWith(spans, moved)
+  })
+
+  /** Span an edit starts from: the rolled-up one for summaries. */
+  function baseSpan(normalized: NormalizedItem<I>): Span {
+    if (!rolledUp(normalized)) return normalized
+    return committedRollup.value.summaries.get(normalized.id) ?? normalized
+  }
 
   function spanOf(normalized: NormalizedItem<I>): Span {
     const active = draft.value
     if (active?.id === normalized.id) return active
-    return shiftDraft.value?.get(normalized.id) ?? normalized
+    const moved = shiftDraft.value?.get(normalized.id)
+    if (moved) return moved
+    if (!rolledUp(normalized)) return normalized
+    return draftRollup.value?.summaries.get(normalized.id) ?? baseSpan(normalized)
   }
 
   // Lanes and overloads
@@ -636,7 +731,8 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
       a.start === b.start &&
       a.end === b.end &&
       a.dragging === b.dragging &&
-      a.editable === b.editable
+      a.editable === b.editable &&
+      a.resizable === b.resizable
     )
   }
 
@@ -666,8 +762,10 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
         room: Infinity,
         start: span.start,
         end: span.end,
+        summary: normalized.summary,
         dragging: active?.id === normalized.id,
         editable: canEditItem(normalized.item),
+        resizable: canEditItem(normalized.item) && editable.value.resize && !rolledUp(normalized),
       })
     }
     for (let i = start; i < end; i++) {
@@ -827,25 +925,56 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     stopInteraction = cleanup
   }
 
-  /** What `autoShift` would do to the successors if `id` had `span`. */
-  function previewShifts(id: string, span: Span): ReadonlyMap<string, Span> | null {
-    if (!autoShift.value || !linkIndex.value.outgoing.has(id)) return null
-    const byId = itemIndex.value.byId
-    const shifted = shiftSuccessors(id, linkIndex.value, {
-      spanOf: (other) => (other === id ? span : byId.get(other)),
-      canShift: (other) => {
-        const item = byId.get(other)
-        return !!item && canEditItem(item.item) && editable.value.move
-      },
-      calendar: snapper.value.unit === 'day' ? calendar.value : null,
-    })
-    return shifted.size ? shifted : null
+  /** Items an edit moves along: the rows below for `moveChildren`, then successors for `autoShift`. */
+  function companions(normalized: NormalizedItem<I>, span: Span, mode: DragMode) {
+    const { byId, byRow } = itemIndex.value
+    const base = baseSpan(normalized)
+    const children = new Map<string, Span>()
+    if (mode === 'move' && moveChildren.value && span.start !== base.start) {
+      const shift = { unit: snapper.value.unit, timeZone: timeZone.value, calendar: calendar.value }
+      for (const rowId of descendantRows(rowTree.value, normalized.rowId)) {
+        for (const child of byRow.get(rowId) ?? []) {
+          // Rolled-up summaries follow their items, locked items stay.
+          if (rolledUp(child) || !canEditItem(child.item)) continue
+          children.set(child.id, shiftSpan(child, base.start, span.start, shift))
+        }
+      }
+    }
+    const shifted = new Map<string, Span>()
+    if (autoShift.value) {
+      const moved = new Map(children).set(normalized.id, span)
+      for (const root of moved.keys()) {
+        if (!linkIndex.value.outgoing.has(root)) continue
+        const pushed = shiftSuccessors(root, linkIndex.value, {
+          spanOf: (id) => {
+            const other = byId.get(id)
+            return shifted.get(id) ?? moved.get(id) ?? (other && baseSpan(other))
+          },
+          canShift: (id) => {
+            const other = byId.get(id)
+            return !moved.has(id) && !!other && !rolledUp(other) && canEditItem(other.item) && editable.value.move
+          },
+          calendar: snapper.value.unit === 'day' ? calendar.value : null,
+        })
+        for (const [id, next] of pushed) shifted.set(id, next)
+      }
+    }
+    return { children, shifted }
   }
 
-  /** Reports an edit, plus the successors `autoShift` moved because of it. */
-  function commit(normalized: NormalizedItem<I>, span: Span, rowId?: string, rowKey?: Id) {
+  /** Spans `companions` gives, as one map for the drag preview. */
+  function previewCompanions(normalized: NormalizedItem<I>, span: Span, mode: DragMode): ReadonlyMap<string, Span> | null {
+    const { children, shifted } = companions(normalized, span, mode)
+    if (!children.size && !shifted.size) return null
+    if (!shifted.size) return children
+    return new Map([...children, ...shifted])
+  }
+
+  /** Reports an edit, plus what it moved along and the summaries it changed. */
+  function commit(normalized: NormalizedItem<I>, span: Span, mode: DragMode, rowId?: string, rowKey?: Id) {
     const tz = timeZone.value
-    const timeChanged = span.start !== normalized.start || span.end !== normalized.end
+    const base = baseSpan(normalized)
+    const timeChanged = span.start !== base.start || span.end !== base.end
     const rowChanged = rowId !== undefined && rowId !== normalized.rowId
     if (!timeChanged && !rowChanged) return
     const toChange = (target: NormalizedItem<I>, next: Span, source: ItemChange<I>['source']): ItemChange<I> => ({
@@ -862,9 +991,25 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
       edit.rowId = rowKey ?? (row ? getRowId(row.row) : rowId)
     }
     const changes = [edit]
+    const byId = itemIndex.value.byId
+    const spans = new Map<string, Span>([[normalized.id, span]])
     if (timeChanged) {
-      for (const [id, next] of previewShifts(normalized.id, span) ?? []) {
-        changes.push(toChange(itemIndex.value.byId.get(id)!, next, 'auto-shift'))
+      const { children, shifted } = companions(normalized, span, mode)
+      for (const [id, next] of children) {
+        changes.push(toChange(byId.get(id)!, next, 'children'))
+        spans.set(id, next)
+      }
+      for (const [id, next] of shifted) {
+        changes.push(toChange(byId.get(id)!, next, 'auto-shift'))
+        spans.set(id, next)
+      }
+    }
+    if (rollup.value) {
+      const moved = rowChanged ? { id: normalized.id, from: normalized.rowId, to: rowId! } : undefined
+      for (const [id, next] of rollupWith(spans, moved).summaries) {
+        const summary = byId.get(id)
+        if (!summary || spans.has(id) || (next.start === summary.start && next.end === summary.end)) continue
+        changes.push(toChange(summary, next, 'rollup'))
       }
     }
     for (const change of changes) options.onItemChange?.(change)
@@ -885,12 +1030,13 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   function startDrag(event: PointerEvent, id: Id, mode: DragMode) {
     const normalized = itemIndex.value.byId.get(String(id))
     if (!normalized || event.button !== 0 || !canEditItem(normalized.item)) return
-    if (!(mode === 'move' ? editable.value.move : editable.value.resize)) return
+    if (!(mode === 'move' ? editable.value.move : editable.value.resize && !rolledUp(normalized))) return
     event.preventDefault()
     event.stopPropagation()
 
     const grabTime = xToTime(pointerToTimeline(event.clientX, event.clientY).x)
     const reassign = mode === 'move' && canReassign.value
+    const base = baseSpan(normalized)
     let rowId = normalized.rowId
     let moved = false
 
@@ -908,9 +1054,9 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
         const point = pointerToTimeline(clientX, clientY)
         // Over a row the item may not go to, it stays in the last allowed one.
         if (reassign) rowId = targetRowAt(point.y, normalized.item) ?? rowId
-        const span = applyDrag(normalized, mode, xToTime(point.x) - grabTime, snapper.value, calendar.value)
+        const span = applyDrag(base, mode, xToTime(point.x) - grabTime, snapper.value, calendar.value)
         draft.value = { id: normalized.id, fromRowId: normalized.rowId, rowId, mode, ...span }
-        shiftDraft.value = previewShifts(normalized.id, span)
+        shiftDraft.value = previewCompanions(normalized, span, mode)
       },
       onEnd: (e) => {
         const result = draft.value
@@ -918,7 +1064,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
         shiftDraft.value = null
         if (!moved) return
         suppressNextClick()
-        if (e && result) commit(normalized, result, result.rowId)
+        if (e && result) commit(normalized, result, mode, result.rowId)
       },
     })
   }
@@ -927,9 +1073,9 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   function nudge(id: Id, mode: DragMode, steps: number) {
     const normalized = itemIndex.value.byId.get(String(id))
     if (!normalized || !canEditItem(normalized.item)) return
-    if (!(mode === 'move' ? editable.value.move : editable.value.resize)) return
-    const span = nudgeSpan(normalized, mode, steps, snapper.value, calendar.value)
-    commit(normalized, span)
+    if (!(mode === 'move' ? editable.value.move : editable.value.resize && !rolledUp(normalized))) return
+    const span = nudgeSpan(baseSpan(normalized), mode, steps, snapper.value, calendar.value)
+    commit(normalized, span, mode)
   }
 
   function canMoveTo(item: I, row: R) {
@@ -946,7 +1092,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     for (let i = from + direction; i >= 0 && i < rows.length; i += direction) {
       const row = rows[i]!
       if (!canMoveTo(normalized.item, row.row)) continue
-      commit(normalized, normalized, row.id)
+      commit(normalized, baseSpan(normalized), 'move', row.id)
       return
     }
   }
@@ -958,7 +1104,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     const target = String(rowId)
     const row = toValue(options.rows).find((candidate) => String(getRowId(candidate)) === target)
     if (!row || !canMoveTo(normalized.item, row)) return
-    commit(normalized, normalized, target, getRowId(row))
+    commit(normalized, baseSpan(normalized), 'move', target, getRowId(row))
   }
 
   /**

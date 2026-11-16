@@ -188,6 +188,7 @@ test.describe('phones', () => {
     expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewport)
     expect(layout.sidebar).toBe(160)
   })
+
 })
 
 test.describe('resources', () => {
@@ -348,6 +349,20 @@ test.describe('dashboard', () => {
     await open(page, '')
     await page.getByRole('switch', { name: 'Dependencies' }).click()
     await expect(chart(page).locator('svg g')).toHaveCount(0)
+  })
+
+  test('dragging a phase moves its tasks along', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'mouse drag')
+    await open(page, '')
+    const phase = page.locator('[data-gantt-item="design"]')
+    const task = page.locator('[data-gantt-item="wireframes"]')
+    const [phaseBefore, taskBefore] = [await box(phase), await box(task)]
+    // A phase bar has no edges to resize.
+    await expect(phase.locator('.cursor-ew-resize')).toHaveCount(0)
+    await drag(page, { x: phaseBefore.x + phaseBefore.width - 30, y: phaseBefore.y + phaseBefore.height / 2 }, 7 * DAY_PX + 4)
+    await expect.poll(async () => Math.round((await box(phase)).x - phaseBefore.x)).toBeGreaterThan(0)
+    const moved = Math.round((await box(phase)).x - phaseBefore.x)
+    expect(Math.round((await box(task)).x - taskBefore.x)).toBe(moved)
   })
 
   test('switching the zoom keeps the same dates in view', async ({ page }) => {

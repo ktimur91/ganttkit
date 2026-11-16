@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // Projects with tasks and dependencies, 1 000 to 50 000 rows. Working days, auto-shift, undo and redo.
+// Project bars span their tasks (`rollup`), and dragging one moves its tasks (`move-children`).
 import {
   type GanttInstance,
   type GanttLink,
@@ -202,8 +203,9 @@ const number = new Intl.NumberFormat('en')
       :items="items"
       :calendar="calendarRules"
       :auto-shift="autoShift"
+      move-children
+      rollup
       :sidebar-width="narrow ? 160 : 340"
-      :is-item-editable="(item: DemoItem) => item.type !== 'summary'"
       @items-change="onItemsChange"
     >
       <template #sidebar-header>
@@ -232,7 +234,7 @@ const number = new Intl.NumberFormat('en')
 
     <footer class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-4 py-2 text-xs text-muted-foreground">
       <span v-if="narrow">Drag a bar to move it, its edges to resize, the dots to link.</span>
-      <span v-else>Drag a bar to move it, its edges to resize, the dots to link. Ctrl or Cmd + scroll zooms. Select a link and press Delete to remove it.</span>
+      <span v-else>Drag a bar to move it, its edges to resize, the dots to link. A project bar moves its tasks. Ctrl or Cmd + scroll zooms. Select a link and press Delete to remove it.</span>
       <span v-if="violatedCount" class="ml-auto text-destructive tabular-nums">
         {{ number.format(violatedCount) }} broken {{ violatedCount === 1 ? 'link' : 'links' }}
       </span>

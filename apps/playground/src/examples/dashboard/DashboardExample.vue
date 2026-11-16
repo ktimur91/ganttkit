@@ -34,7 +34,8 @@ const WORKWEEK = {}
 const timeZone = localTimeZone()
 const calendar = createCalendar(WORKWEEK, timeZone)
 
-// Phase bars span their tasks and count the done ones.
+// Phase bars span their tasks and count the done ones. With `rollup` the chart keeps them on their
+// tasks while dragging too, and `move-children` moves a phase's tasks when its bar is dragged.
 const phases = computed(() =>
   plan.phases.map((phase) => {
     const list = tasks.value.filter((task) => task.parentId === phase.id)
@@ -169,6 +170,8 @@ const columns = computed(() => (narrow.value ? 'grid-cols-1' : 'grid-cols-[minma
       class="min-h-0 flex-1"
       locale="en"
       auto-shift
+      move-children
+      rollup
       :rows="rows"
       :items="items"
       :links="showLinks ? links : []"
@@ -176,7 +179,6 @@ const columns = computed(() => (narrow.value ? 'grid-cols-1' : 'grid-cols-[minma
       :row-height="40"
       :sidebar-width="narrow ? 180 : 520"
       :editable="{ link: showLinks }"
-      :is-item-editable="(item: Item) => item.type !== 'summary'"
       @update:links="links = $event"
       @items-change="onItemsChange"
     >

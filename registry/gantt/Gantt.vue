@@ -50,6 +50,12 @@ const props = withDefaults(
     canMoveToRow?: (item: I, row: R) => boolean
     /** Push successors forward after an edit so their links hold again. */
     autoShift?: boolean
+    /** Moving a bar also moves the items in the rows below its row, e.g. a phase with its tasks. */
+    moveChildren?: boolean
+    /** Summary bars span the items in the rows below them, also while dragging, and cannot be resized. */
+    rollup?: boolean
+    /** Which items are summaries. Defaults to `item.type === 'summary'`. */
+    isSummary?: (item: I) => boolean
     /** Dates and duration on hover, and the new ones while dragging. */
     tooltip?: boolean
     /** Right-click menu on bars with "Move to" another row and your own `menu` slot actions. */
@@ -60,7 +66,17 @@ const props = withDefaults(
     initialDate?: DateInput | null
     class?: HTMLAttributes['class']
   }>(),
-  { rowHeight: 36, sidebarWidth: 280, editable: true, stackOverlaps: true, autoShift: false, tooltip: true, contextMenu: true },
+  {
+    rowHeight: 36,
+    sidebarWidth: 280,
+    editable: true,
+    stackOverlaps: true,
+    autoShift: false,
+    moveChildren: false,
+    rollup: false,
+    tooltip: true,
+    contextMenu: true,
+  },
 )
 
 const zoom = defineModel<ZoomLevel>('zoom', { default: 'week' })
@@ -70,7 +86,7 @@ const emit = defineEmits<{
   'update:items': [items: I[]]
   'update:links': [links: GanttLink[]]
   'item-change': [change: ItemChange<I>]
-  /** All changes of one edit: the edited item, then the successors `autoShift` moved. */
+  /** All changes of one edit: the edited item, the children and successors it moved, the summaries it changed. */
   'items-change': [changes: ItemChange<I>[]]
   'item-click': [item: I]
   'link-create': [link: GanttLink]
@@ -106,6 +122,9 @@ const gantt = useGantt<R, I>({
   getRowCapacity: props.getRowCapacity,
   canMoveToRow: props.canMoveToRow,
   autoShift: () => props.autoShift,
+  moveChildren: () => props.moveChildren,
+  rollup: () => props.rollup,
+  isSummary: props.isSummary,
   range: () => props.range,
   weekStartsOn: props.weekStartsOn,
   initialDate: () => props.initialDate,

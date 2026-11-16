@@ -38,7 +38,7 @@ export const EXAMPLES: Example[] = [
   {
     id: 'projects',
     title: 'Projects',
-    description: 'Up to 50 000 rows with dependencies, working days, auto-shift, undo and redo.',
+    description: 'Up to 50 000 rows with dependencies, working days, auto-shift, undo and redo. Dragging a project moves its tasks.',
     component: ProjectsExample,
     files: [
       { name: 'ProjectsExample.vue', code: projectsSource, lang: 'vue' },
