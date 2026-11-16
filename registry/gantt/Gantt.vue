@@ -14,7 +14,7 @@ import {
   type ZoomLevel,
   useGantt,
 } from 'ganttkit'
-import { type HTMLAttributes, computed, provide, ref, useId, useSlots } from 'vue'
+import { type HTMLAttributes, computed, onMounted, provide, ref, useId, useSlots } from 'vue'
 import { cn } from '@/lib/utils'
 import { type GanttContext, GanttContextKey, type GanttMenuState } from './context'
 import GanttBar from './GanttBar.vue'
@@ -174,6 +174,12 @@ provide(GanttContextKey, {
 
 const { viewportEl, totalWidth, totalHeight, visibleRows, visibleBars } = gantt
 
+// The timeline depends on "now", the time zone and the locale, which differ between a server and the
+// browser. With server rendering (Nuxt) the server sends the rows only and the timeline appears once the
+// chart is mounted, so hydration always matches.
+const mounted = ref(false)
+onMounted(() => (mounted.value = true))
+
 function zoomAt(clientX: number, direction: 'in' | 'out') {
   const box = viewportEl.value!.getBoundingClientRect()
   const anchor = clientX - box.left - props.sidebarWidth
@@ -282,7 +288,7 @@ defineExpose({ gantt })
   >
     <div
       class="relative"
-      :style="{ width: `${sidebarWidth + totalWidth}px`, height: `${HEADER_HEIGHT + totalHeight}px` }"
+      :style="{ width: mounted ? `${sidebarWidth + totalWidth}px` : '100%', height: `${HEADER_HEIGHT + totalHeight}px` }"
     >
       <div class="sticky top-0 z-30 flex border-b bg-background" :style="{ height: `${HEADER_HEIGHT}px` }">
         <div
@@ -296,7 +302,7 @@ defineExpose({ gantt })
             </div>
           </slot>
         </div>
-        <GanttTimescale class="shrink-0" :style="{ width: `${totalWidth}px` }" />
+        <GanttTimescale v-if="mounted" class="shrink-0" :style="{ width: `${totalWidth}px` }" />
       </div>
 
       <div class="flex">
@@ -319,7 +325,7 @@ defineExpose({ gantt })
           </div>
         </div>
 
-        <div class="relative shrink-0 overflow-hidden" :style="{ width: `${totalWidth}px`, height: `${totalHeight}px` }">
+        <div v-if="mounted" class="relative shrink-0 overflow-hidden" :style="{ width: `${totalWidth}px`, height: `${totalHeight}px` }">
           <GanttGrid />
           <slot name="timeline" />
           <GanttToday />

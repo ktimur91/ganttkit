@@ -1,0 +1,26 @@
+{
+  "name": "nuxt-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "components": "node scripts/copy-components.ts",
+    "dev": "pnpm components && nuxt dev --port 5290",
+    "build": "pnpm --filter ganttkit build && pnpm components && nuxt build",
+    "preview": "nuxt preview --port 5291",
+    "typecheck": "pnpm --filter ganttkit build && pnpm components && nuxt typecheck",
+    "postinstall": "pnpm components && nuxt prepare"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "ganttkit": "workspace:*",
+    "nuxt": "^4.6.4",
+    "tailwind-merge": "^3.7.0",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.3",
+    "vue-tsc": "^3.3.14"
+  }
+}

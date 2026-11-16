@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "pnpm --filter playground dev",
-    "build": "pnpm --filter ganttkit build && pnpm --filter playground build",
+    "build": "pnpm --filter ganttkit build && pnpm --filter playground build && pnpm --filter nuxt-example build",
     "test": "pnpm --filter ganttkit test",
     "typecheck": "pnpm -r typecheck",
     "registry:build": "pnpm dlx shadcn-vue@2.9.0 build -o apps/playground/public/r",
