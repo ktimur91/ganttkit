@@ -831,7 +831,13 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
   // Pointer interaction
 
   let stopInteraction: (() => void) | null = null
+  let cancelActive: (() => void) | null = null
   onScopeDispose(() => stopInteraction?.())
+
+  /** Ends a drag or link in progress without saving it, like Escape. E.g. when a second finger starts a pinch. */
+  function cancelInteraction() {
+    cancelActive?.()
+  }
 
   function pointerToTimeline(clientX: number, clientY: number) {
     const el = viewportEl.value
@@ -903,10 +909,12 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
       cleanup()
       handlers.onEnd(e)
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
+    const cancel = () => {
       cleanup()
       handlers.onEnd(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancel()
     }
     const cleanup = () => {
       cancelAnimationFrame(frame)
@@ -915,6 +923,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
       window.removeEventListener('pointercancel', onUp)
       window.removeEventListener('keydown', onKey)
       stopInteraction = null
+      cancelActive = null
     }
 
     window.addEventListener('pointermove', onMove)
@@ -923,6 +932,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     window.addEventListener('keydown', onKey)
     frame = requestAnimationFrame(autoScroll)
     stopInteraction = cleanup
+    cancelActive = cancel
   }
 
   /** Items an edit moves along: the rows below for `moveChildren`, then successors for `autoShift`. */
@@ -1266,6 +1276,7 @@ export function useGantt<R extends GanttRowBase, I extends GanttItemBase = R & G
     collapseAll,
     startDrag,
     startLink,
+    cancelInteraction,
     nudge,
     moveToRow,
     moveItemToRow,

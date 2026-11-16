@@ -194,7 +194,37 @@ function onWheel(event: WheelEvent) {
   wheelDelta = 0
 }
 
+// Two fingers on a touch screen zoom around their midpoint, one finger still scrolls.
+// `touch-action: pan-x pan-y` keeps the browser from zooming the whole page instead.
+let pinchDistance = 0
+function fingers(touches: TouchList) {
+  const [a, b] = [touches[0]!, touches[1]!]
+  return { distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), midX: (a.clientX + b.clientX) / 2 }
+}
+function onTouchStart(event: TouchEvent) {
+  if (event.touches.length !== 2) return
+  // The first finger may have started dragging a bar: a pinch is not a drag.
+  gantt.cancelInteraction()
+  pinchDistance = fingers(event.touches).distance
+}
+function onTouchMove(event: TouchEvent) {
+  if (!pinchDistance || event.touches.length !== 2) return
+  event.preventDefault()
+  const { distance, midX } = fingers(event.touches)
+  if (distance / pinchDistance > 1.25) {
+    zoomAt(midX, 'in')
+    pinchDistance = distance
+  } else if (distance / pinchDistance < 0.8) {
+    zoomAt(midX, 'out')
+    pinchDistance = distance
+  }
+}
+function onTouchEnd(event: TouchEvent) {
+  if (event.touches.length < 2) pinchDistance = 0
+}
+
 // Safari sends trackpad pinch as gesture events, without them it zooms the whole page.
+// On iPhone a touch pinch sends them too, the touch handlers above already zoom then.
 let gestureScale = 1
 function onGestureStart(event: Event) {
   event.preventDefault()
@@ -202,6 +232,7 @@ function onGestureStart(event: Event) {
 }
 function onGestureChange(event: Event) {
   event.preventDefault()
+  if (pinchDistance) return
   const { scale, clientX } = event as Event & { scale: number; clientX: number }
   if (scale / gestureScale > 1.25) {
     zoomAt(clientX, 'in')
@@ -236,9 +267,15 @@ defineExpose({ gantt })
   <div
     ref="viewportEl"
     data-slot="gantt"
-    :class="cn('relative overflow-auto overscroll-contain bg-background text-sm text-foreground', props.class)"
+    :class="
+      cn('relative overflow-auto overscroll-contain bg-background text-sm text-foreground [touch-action:pan-x_pan-y]', props.class)
+    "
     tabindex="-1"
     @wheel="onWheel"
+    @touchstart="onTouchStart"
+    @touchmove="onTouchMove"
+    @touchend="onTouchEnd"
+    @touchcancel="onTouchEnd"
     @gesturestart="onGestureStart"
     @gesturechange="onGestureChange"
     @keydown="onKeydown"

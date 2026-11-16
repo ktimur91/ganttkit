@@ -189,6 +189,31 @@ test.describe('phones', () => {
     expect(layout.sidebar).toBe(160)
   })
 
+  test('two fingers zoom in and out', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'touch points are sent through the Chrome DevTools protocol')
+    await open(page, '')
+    const area = await box(chart(page))
+    const cdp = await page.context().newCDPSession(page)
+    const pinch = async (from: number, to: number) => {
+      const x = area.x + area.width / 2
+      const y = area.y + area.height / 2
+      const points = (gap: number) => [
+        { x: x - gap / 2, y, id: 0 },
+        { x: x + gap / 2, y, id: 1 },
+      ]
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: points(from) })
+      for (let i = 1; i <= 8; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(from + ((to - from) * i) / 8) })
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    }
+    const pressed = (name: string) => page.getByRole('button', { name, exact: true })
+    // Spreading the fingers to 1.5 times zooms in one level: week to day.
+    await pinch(80, 120)
+    await expect(pressed('Day')).toHaveAttribute('aria-pressed', 'true')
+    await pinch(120, 80)
+    await expect(pressed('Week')).toHaveAttribute('aria-pressed', 'true')
+  })
 })
 
 test.describe('resources', () => {
